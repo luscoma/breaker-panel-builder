@@ -157,7 +157,7 @@ body {
 .palette__item--double {
   border-left-color: #fb923c;
 }
-.palette__item--quad {
+.palette__item--double-4x120 {
   border-left-color: #34d399;
 }
 
@@ -270,7 +270,13 @@ body {
 .breaker--double {
   border-left: 3px solid #fb923c;
 }
-.breaker--quad {
+.breaker--double-2x240 {
+  border-left: 3px solid #f59e0b;
+}
+.breaker--double-240-2x120 {
+  border-left: 3px solid #2dd4bf;
+}
+.breaker--double-4x120 {
   border-left: 3px solid #34d399;
 }
 
@@ -500,4 +506,101 @@ body {
   .circuit__volts {
     display: none;
   }
+}
+
+/* ---------- room + label editing ---------- */
+
+.circuit__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.breaker--left .circuit__text {
+  flex-direction: row-reverse;
+}
+
+.circuit__room {
+  flex: none;
+  max-width: 45%;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.circuit-editor + .circuit-editor {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.circuit-editor__fields {
+  display: flex;
+  gap: 6px;
+}
+
+.circuit-editor__fields .field__input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.chip {
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.chip--active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.room-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-row + .room-row {
+  margin-top: 8px;
+}
+
+.room-row .field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.room-row__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.room-row__count {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
 }

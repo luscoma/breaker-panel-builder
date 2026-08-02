@@ -14,27 +14,39 @@ import { BreakerBody } from './components/BreakerView';
 import { BreakerEditor } from './components/BreakerEditor';
 import { Palette } from './components/Palette';
 import { PanelGrid } from './components/PanelGrid';
+import { RoomsSheet } from './components/RoomsSheet';
 import { copyPngToClipboard, downloadSvg } from './export/png';
 import {
+  addRoom,
   canPlace,
   emptyPanel,
+  knownLabels,
   moveBreaker,
   placeBreaker,
   removeBreaker,
-  setLabel,
+  removeRoom,
+  renameRoom,
+  roomColor,
+  roomUsage,
+  setCircuitLabel,
+  setCircuitRoom,
+  setConfig,
   setName,
-  setQuadConfig,
   summarize,
 } from './model/panel';
 import { stateFromHash, stateToHash } from './model/serialize';
-import { BreakerType, PanelState, QuadConfig, SLOT_COUNT } from './model/types';
+import { BreakerConfig, PanelState, SLOT_COUNT } from './model/types';
 
 type Action =
-  | { type: 'place'; breakerType: BreakerType; slot: number }
+  | { type: 'place'; config: BreakerConfig; slot: number }
   | { type: 'move'; id: string; slot: number }
   | { type: 'remove'; id: string }
+  | { type: 'config'; id: string; config: BreakerConfig }
+  | { type: 'room'; id: string; circuit: number; room: string }
   | { type: 'label'; id: string; circuit: number; label: string }
-  | { type: 'quadConfig'; id: string; quadConfig: QuadConfig }
+  | { type: 'addRoom'; room: string }
+  | { type: 'renameRoom'; from: string; to: string }
+  | { type: 'removeRoom'; room: string }
   | { type: 'name'; name: string }
   | { type: 'load'; state: PanelState }
   | { type: 'clear' };
@@ -42,27 +54,33 @@ type Action =
 function reducer(state: PanelState, action: Action): PanelState {
   switch (action.type) {
     case 'place':
-      return placeBreaker(state, action.breakerType, action.slot);
+      return placeBreaker(state, action.config, action.slot);
     case 'move':
       return moveBreaker(state, action.id, action.slot);
     case 'remove':
       return removeBreaker(state, action.id);
+    case 'config':
+      return setConfig(state, action.id, action.config);
+    case 'room':
+      return setCircuitRoom(state, action.id, action.circuit, action.room);
     case 'label':
-      return setLabel(state, action.id, action.circuit, action.label);
-    case 'quadConfig':
-      return setQuadConfig(state, action.id, action.quadConfig);
+      return setCircuitLabel(state, action.id, action.circuit, action.label);
+    case 'addRoom':
+      return addRoom(state, action.room);
+    case 'renameRoom':
+      return renameRoom(state, action.from, action.to);
+    case 'removeRoom':
+      return removeRoom(state, action.room);
     case 'name':
       return setName(state, action.name);
     case 'load':
       return action.state;
     case 'clear':
-      return { ...emptyPanel(), name: state.name };
+      return { ...emptyPanel(), name: state.name, rooms: state.rooms };
   }
 }
 
-type ActiveDrag =
-  | { kind: 'palette'; breakerType: BreakerType }
-  | { kind: 'breaker'; id: string };
+type ActiveDrag = { kind: 'palette'; config: BreakerConfig } | { kind: 'breaker'; id: string };
 
 function initialState(): PanelState {
   if (typeof window === 'undefined') return emptyPanel();
@@ -71,8 +89,9 @@ function initialState(): PanelState {
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
-  const [selectedType, setSelectedType] = useState<BreakerType | null>(null);
+  const [selectedConfig, setSelectedConfig] = useState<BreakerConfig | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const lastHashRef = useRef<string>('');
@@ -110,23 +129,27 @@ export default function App() {
     window.setTimeout(() => setToast((current) => (current === message ? null : current)), 2400);
   }, []);
 
+  const colorForRoom = useCallback((room: string) => roomColor(state, room), [state]);
+  const labels = useMemo(() => knownLabels(state), [state]);
+
   const validSlots = useMemo(() => {
-    const pending = activeDrag ?? (selectedType ? { kind: 'palette' as const, breakerType: selectedType } : null);
+    const pending =
+      activeDrag ?? (selectedConfig ? { kind: 'palette' as const, config: selectedConfig } : null);
     if (!pending) return null;
 
-    const type =
+    const config =
       pending.kind === 'palette'
-        ? pending.breakerType
-        : state.breakers.find((b) => b.id === pending.id)?.type;
-    if (!type) return null;
+        ? pending.config
+        : state.breakers.find((b) => b.id === pending.id)?.config;
+    if (!config) return null;
     const ignoreId = pending.kind === 'breaker' ? pending.id : undefined;
 
     const valid = new Set<number>();
     for (let slot = 1; slot <= SLOT_COUNT; slot++) {
-      if (canPlace(state, type, slot, ignoreId)) valid.add(slot);
+      if (canPlace(state, config, slot, ignoreId)) valid.add(slot);
     }
     return valid;
-  }, [activeDrag, selectedType, state]);
+  }, [activeDrag, selectedConfig, state]);
 
   const onDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as ActiveDrag | undefined;
@@ -141,23 +164,23 @@ export default function App() {
     if (!drag || slot === undefined) return;
 
     if (drag.kind === 'palette') {
-      if (!canPlace(state, drag.breakerType, slot)) {
+      if (!canPlace(state, drag.config, slot)) {
         showToast('That breaker does not fit there');
         return;
       }
-      dispatch({ type: 'place', breakerType: drag.breakerType, slot });
+      dispatch({ type: 'place', config: drag.config, slot });
     } else {
       dispatch({ type: 'move', id: drag.id, slot });
     }
   };
 
   const onSlotTap = (slot: number) => {
-    if (!selectedType) return;
-    if (!canPlace(state, selectedType, slot)) {
+    if (!selectedConfig) return;
+    if (!canPlace(state, selectedConfig, slot)) {
       showToast('That breaker does not fit there');
       return;
     }
-    dispatch({ type: 'place', breakerType: selectedType, slot });
+    dispatch({ type: 'place', config: selectedConfig, slot });
   };
 
   const onCopyLink = async () => {
@@ -212,6 +235,9 @@ export default function App() {
             placeholder="Panel name"
           />
           <div className="topbar__actions">
+            <button type="button" className="btn" onClick={() => setRoomsOpen(true)}>
+              Rooms
+            </button>
             <button type="button" className="btn" onClick={onCopyLink}>
               Copy link
             </button>
@@ -238,31 +264,45 @@ export default function App() {
             <strong>{stats.monitoredCircuits}</strong> individually monitored
           </span>
           <span>
-            <strong>{stats.usedSpaces}</strong>/{SLOT_COUNT} spaces
+            <strong>{stats.usedSlots}</strong>/{SLOT_COUNT} slots
           </span>
         </div>
 
         <Palette
-          selectedType={selectedType}
-          onSelectType={(type) => setSelectedType((current) => (current === type ? null : type))}
+          selectedConfig={selectedConfig}
+          onSelectConfig={(config) =>
+            setSelectedConfig((current) => (current === config ? null : config))
+          }
         />
 
         <PanelGrid
           state={state}
           selectedId={selectedId}
           validSlots={validSlots}
+          roomColor={colorForRoom}
           onSlotTap={onSlotTap}
           onBreakerSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
         />
 
-        {selected && (
+        {selected && !roomsOpen && (
           <BreakerEditor
             breaker={selected}
+            rooms={state.rooms}
+            labels={labels}
+            roomColor={colorForRoom}
+            canUseConfig={(config) => canPlace(state, config, selected.slot, selected.id)}
+            onConfigChange={(config) => {
+              if (!canPlace(state, config, selected.slot, selected.id)) {
+                showToast('Not enough room in the panel for that breaker');
+                return;
+              }
+              dispatch({ type: 'config', id: selected.id, config });
+            }}
+            onRoomChange={(circuit, room) =>
+              dispatch({ type: 'room', id: selected.id, circuit, room })
+            }
             onLabelChange={(circuit, label) =>
               dispatch({ type: 'label', id: selected.id, circuit, label })
-            }
-            onQuadConfigChange={(quadConfig) =>
-              dispatch({ type: 'quadConfig', id: selected.id, quadConfig })
             }
             onRemove={() => {
               dispatch({ type: 'remove', id: selected.id });
@@ -272,26 +312,34 @@ export default function App() {
           />
         )}
 
+        {roomsOpen && (
+          <RoomsSheet
+            rooms={state.rooms}
+            usage={(room) => roomUsage(state, room)}
+            roomColor={colorForRoom}
+            onAdd={(room) => dispatch({ type: 'addRoom', room })}
+            onRename={(from, to) => dispatch({ type: 'renameRoom', from, to })}
+            onRemove={(room) => dispatch({ type: 'removeRoom', room })}
+            onClose={() => setRoomsOpen(false)}
+          />
+        )}
+
         {toast && <div className="toast">{toast}</div>}
       </div>
 
       <DragOverlay dropAnimation={null}>
         {activeDrag?.kind === 'palette' && (
-          <div className={`breaker breaker--${activeDrag.breakerType} breaker--overlay`}>
+          <div className={`breaker breaker--${activeDrag.config} breaker--overlay`}>
             <BreakerBody
-              breaker={{
-                id: 'preview',
-                type: activeDrag.breakerType,
-                slot: 1,
-                labels: [],
-              }}
+              breaker={{ id: 'preview', config: activeDrag.config, slot: 1, circuits: [] }}
+              roomColor={colorForRoom}
               compact
             />
           </div>
         )}
         {activeBreaker && (
-          <div className={`breaker breaker--${activeBreaker.type} breaker--overlay`}>
-            <BreakerBody breaker={activeBreaker} compact />
+          <div className={`breaker breaker--${activeBreaker.config} breaker--overlay`}>
+            <BreakerBody breaker={activeBreaker} roomColor={colorForRoom} compact />
           </div>
         )}
       </DragOverlay>

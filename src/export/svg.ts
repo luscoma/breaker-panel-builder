@@ -1,10 +1,13 @@
 import {
-  circuitsFor,
+  columnOf,
   isIndividuallyMonitored,
-  spacesFor,
+  roomColor,
+  rowOf,
+  slotsFor,
   summarize,
+  throwsFor,
 } from '../model/panel';
-import { Breaker, PanelState, ROWS } from '../model/types';
+import { Breaker, COLUMN_SIZE, PanelState, ROWS } from '../model/types';
 
 const ROW_H = 34;
 const LABEL_W = 250;
@@ -47,27 +50,19 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-function rowOf(slot: number): number {
-  return Math.ceil(slot / 2) - 1;
-}
-
-function isLeft(slot: number): boolean {
-  return slot % 2 === 1;
-}
-
-/** Total pole positions in a breaker body — the unit circuit heights divide. */
+/** Total pole positions on a breaker — the unit its throw heights divide. */
 function poleUnits(breaker: Breaker): number {
-  return circuitsFor(breaker.type, breaker.quadConfig).reduce((sum, c) => sum + c.poles, 0);
+  return throwsFor(breaker.config).reduce((sum, t) => sum + t.poles, 0);
 }
 
-function renderBreaker(breaker: Breaker): string {
-  const left = isLeft(breaker.slot);
+function renderBreaker(state: PanelState, breaker: Breaker): string {
+  const left = columnOf(breaker.slot) === 0;
   const x = left ? LEFT_BODY_X : RIGHT_BODY_X;
-  const y = GRID_TOP + rowOf(breaker.slot) * ROW_H;
-  const h = spacesFor(breaker.type) * ROW_H;
-  const circuits = circuitsFor(breaker.type, breaker.quadConfig);
+  const y = GRID_TOP + (rowOf(breaker.slot) - 1) * ROW_H;
+  const h = slotsFor(breaker.config) * ROW_H;
+  const throws = throwsFor(breaker.config);
   const units = poleUnits(breaker);
-  const monitored = isIndividuallyMonitored(breaker.type);
+  const monitored = isIndividuallyMonitored(breaker.config);
 
   const parts: string[] = [];
   parts.push(
@@ -76,8 +71,8 @@ function renderBreaker(breaker: Breaker): string {
   );
 
   let offset = 0;
-  circuits.forEach((circuit, i) => {
-    const ch = ((h - 4) * circuit.poles) / units;
+  throws.forEach((t, i) => {
+    const ch = ((h - 4) * t.poles) / units;
     const cy = y + 2 + offset;
     offset += ch;
     const midY = cy + ch / 2;
@@ -98,24 +93,40 @@ function renderBreaker(breaker: Breaker): string {
         `fill="${COLORS.handle}"/>`,
     );
 
-    const voltColor = circuit.voltage === 240 ? COLORS.v240 : COLORS.v120;
+    const voltColor = t.voltage === 240 ? COLORS.v240 : COLORS.v120;
     const voltX = left ? x + 12 : x + BODY_W - 12;
     parts.push(
       `<text x="${voltX}" y="${midY + 3.5}" text-anchor="${left ? 'start' : 'end'}" ` +
-        `font-size="10" font-weight="600" fill="${voltColor}">${circuit.voltage}V</text>`,
+        `font-size="10" font-weight="600" fill="${voltColor}">${t.voltage}V</text>`,
     );
 
-    // Circuit label, printed outside the panel body like a directory card.
+    // Room and label, printed outside the panel body like a directory card.
+    const circuit = breaker.circuits[i] ?? { room: '', label: '' };
+    const room = circuit.room.trim();
+    const label = circuit.label.trim();
     const labelX = left ? PAD + LABEL_W - 12 : RIGHT_BODY_X + BODY_W + 12;
     const anchor = left ? 'end' : 'start';
-    const text = breaker.labels[i]?.trim();
+    const color = room ? roomColor(state, room, true) ?? COLORS.muted : COLORS.muted;
+
+    let content: string;
+    if (room && label) {
+      content =
+        `<tspan fill="${color}" font-weight="600">${esc(truncate(room, 16))}</tspan>` +
+        `<tspan fill="${COLORS.muted}"> · </tspan>` +
+        `<tspan fill="${COLORS.ink}">${esc(truncate(label, 24))}</tspan>`;
+    } else if (room) {
+      content = `<tspan fill="${color}" font-weight="600">${esc(truncate(room, 16))}</tspan>`;
+    } else if (label) {
+      content = `<tspan fill="${COLORS.ink}">${esc(truncate(label, 32))}</tspan>`;
+    } else {
+      content = `<tspan fill="${COLORS.muted}" font-style="italic">unlabeled</tspan>`;
+    }
+
     parts.push(
-      `<text x="${labelX}" y="${midY + 3.5}" text-anchor="${anchor}" font-size="11.5" ` +
-        `fill="${text ? COLORS.ink : COLORS.muted}"${text ? '' : ' font-style="italic"'}>` +
-        `${esc(text ? truncate(text, 32) : 'unlabeled')}</text>`,
+      `<text x="${labelX}" y="${midY + 3.5}" text-anchor="${anchor}" font-size="11.5">${content}</text>`,
     );
 
-    // Monitoring marker: filled = its own CT channel, hollow = shares a space.
+    // Monitoring marker: filled = its own CT channel, hollow = shares a slot.
     const dotX = left ? PAD + LABEL_W - 4 : RIGHT_BODY_X + BODY_W + 4;
     parts.push(
       `<circle cx="${dotX}" cy="${midY}" r="2.6" fill="${monitored ? COLORS.ink : 'none'}" ` +
@@ -133,17 +144,15 @@ function renderBreaker(breaker: Breaker): string {
 export function renderPanelSvg(state: PanelState): string {
   const parts: string[] = [];
 
-  parts.push(
-    `<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="${COLORS.bg}"/>`,
-  );
+  parts.push(`<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="${COLORS.bg}"/>`);
 
   parts.push(
-    `<text x="${PAD}" y="${34}" font-size="20" font-weight="700" fill="${COLORS.ink}">` +
+    `<text x="${PAD}" y="34" font-size="20" font-weight="700" fill="${COLORS.ink}">` +
       `${esc(truncate(state.name || 'Panel', 48))}</text>`,
   );
   parts.push(
-    `<text x="${PAD}" y="${54}" font-size="12" fill="${COLORS.muted}">` +
-      `48-space panel · circuit directory</text>`,
+    `<text x="${PAD}" y="54" font-size="12" fill="${COLORS.muted}">` +
+      `48-slot panel · circuit directory</text>`,
   );
 
   // Panel face outline and centre spine.
@@ -166,16 +175,16 @@ export function renderPanelSvg(state: PanelState): string {
     const midY = y + ROW_H / 2 + 3.5;
     parts.push(
       `<text x="${SPINE_X + SPINE_W / 2 - 6}" y="${midY}" text-anchor="end" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row * 2 + 1}</text>`,
+        `fill="${COLORS.muted}">${row + 1}</text>`,
     );
     parts.push(
       `<text x="${SPINE_X + SPINE_W / 2 + 6}" y="${midY}" text-anchor="start" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row * 2 + 2}</text>`,
+        `fill="${COLORS.muted}">${row + 1 + COLUMN_SIZE}</text>`,
     );
   }
 
   for (const breaker of state.breakers) {
-    parts.push(renderBreaker(breaker));
+    parts.push(renderBreaker(state, breaker));
   }
 
   const s = summarize(state);
@@ -183,7 +192,7 @@ export function renderPanelSvg(state: PanelState): string {
   parts.push(
     `<text x="${PAD}" y="${footY}" font-size="11.5" fill="${COLORS.ink}">` +
       `${s.breakers} breakers · ${s.circuits} circuits · ${s.monitoredCircuits} individually ` +
-      `monitored · ${s.usedSpaces}/48 spaces used</text>`,
+      `monitored · ${s.usedSlots}/48 slots used</text>`,
   );
   parts.push(
     `<circle cx="${PAD + 4}" cy="${footY + 18}" r="2.6" fill="${COLORS.ink}"/>` +

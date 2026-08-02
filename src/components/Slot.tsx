@@ -27,7 +27,7 @@ export function Slot({ slot, column, row, occupied, valid, onTap }: SlotProps) {
       onClick={() => onTap(slot)}
       role="button"
       tabIndex={-1}
-      aria-label={`Panel space ${slot}`}
+      aria-label={`Panel slot ${slot}`}
     />
   );
 }

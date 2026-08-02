@@ -1,13 +1,14 @@
 import { BreakerView } from './BreakerView';
 import { Slot } from './Slot';
-import { buildOccupancy } from '../model/panel';
-import { PanelState, ROWS, SLOT_COUNT } from '../model/types';
+import { buildOccupancy, columnOf, rowOf } from '../model/panel';
+import { COLUMN_SIZE, PanelState, ROWS, SLOT_COUNT } from '../model/types';
 
 interface PanelGridProps {
   state: PanelState;
   selectedId: string | null;
   /** Slots a drop would be legal in, or null when nothing is being dragged. */
   validSlots: Set<number> | null;
+  roomColor: (room: string) => string | null;
   onSlotTap: (slot: number) => void;
   onBreakerSelect: (id: string) => void;
 }
@@ -16,6 +17,7 @@ export function PanelGrid({
   state,
   selectedId,
   validSlots,
+  roomColor,
   onSlotTap,
   onBreakerSelect,
 }: PanelGridProps) {
@@ -32,8 +34,8 @@ export function PanelGrid({
           <Slot
             key={slot}
             slot={slot}
-            column={slot % 2 === 1 ? 1 : 3}
-            row={Math.ceil(slot / 2)}
+            column={columnOf(slot) === 0 ? 1 : 3}
+            row={rowOf(slot)}
             occupied={occupancy.has(slot)}
             valid={validSlots ? validSlots.has(slot) : null}
             onTap={onSlotTap}
@@ -42,8 +44,8 @@ export function PanelGrid({
 
         {rows.map((row) => (
           <div className="spine" key={`spine-${row}`} style={{ gridColumn: 2, gridRow: row }}>
-            <span>{row * 2 - 1}</span>
-            <span>{row * 2}</span>
+            <span>{row}</span>
+            <span>{row + COLUMN_SIZE}</span>
           </div>
         ))}
 
@@ -51,7 +53,9 @@ export function PanelGrid({
           <BreakerView
             key={breaker.id}
             breaker={breaker}
+            state={state}
             selected={breaker.id === selectedId}
+            roomColor={roomColor}
             onSelect={onBreakerSelect}
           />
         ))}
