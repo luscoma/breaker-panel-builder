@@ -1,7 +1,7 @@
 import { BreakerView } from './BreakerView';
 import { Slot } from './Slot';
 import { buildOccupancy, columnOf, rowOf } from '../model/panel';
-import { COLUMN_SIZE, PanelState, ROWS, SLOT_COUNT } from '../model/types';
+import { PanelState, ROWS, SLOT_COUNT } from '../model/types';
 
 interface PanelGridProps {
   state: PanelState;
@@ -44,8 +44,8 @@ export function PanelGrid({
 
         {rows.map((row) => (
           <div className="spine" key={`spine-${row}`} style={{ gridColumn: 2, gridRow: row }}>
-            <span>{row}</span>
-            <span>{row + COLUMN_SIZE}</span>
+            <span>{row * 2 - 1}</span>
+            <span>{row * 2}</span>
           </div>
         ))}
 

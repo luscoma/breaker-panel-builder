@@ -23,7 +23,8 @@ function sampleState() {
   state = setCircuitRoom(state, quad, 1, 'Kitchen');
   state = setCircuitLabel(state, quad, 1, 'Range');
 
-  state = placeBreaker(state, 'tandem', 25);
+  state = placeBreaker(state, 'tandem', 7);
+  state = placeBreaker(state, 'double-2x120', 9);
   state = addRoom(state, 'Garage'); // pre-added, not used by any circuit yet
   return state;
 }
@@ -77,20 +78,15 @@ describe('URL state', () => {
     expect(stateFromHash('')).toBeNull();
   });
 
-  it('rejects the older v1 format rather than mis-placing its breakers', () => {
-    // v1 numbered the columns odd/even and put two-slot breakers at n and n+2,
-    // so its slot numbers mean something different here. Decoding one would lie.
-    const v1 = compressToEncodedURIComponent(
-      JSON.stringify({
-        v: 1,
-        n: 'Old Panel',
-        b: [
-          { t: 'single', s: 1, l: ['Fridge'] },
-          { t: 'double', s: 3, l: ['Range'] },
-        ],
-      }),
-    );
-    expect(decodeState(v1)).toBeNull();
+  it('rejects older formats rather than mis-placing their breakers', () => {
+    // Earlier versions numbered slots differently, so their slot values mean
+    // something else here. Decoding one would silently misplace every breaker.
+    for (const version of [1, 2]) {
+      const old = compressToEncodedURIComponent(
+        JSON.stringify({ v: version, n: 'Old Panel', r: [], b: [{ c: 'd', s: 3, x: [] }] }),
+      );
+      expect(decodeState(old)).toBeNull();
+    }
   });
 
   it('drops individually invalid breakers instead of failing the panel', () => {
@@ -99,7 +95,7 @@ describe('URL state', () => {
       ...state,
       breakers: [
         ...state.breakers,
-        { id: 'x', config: 'double', slot: 24, circuits: [{ room: '', label: '' }] }, // straddles columns
+        { id: 'x', config: 'double', slot: 47, circuits: [{ room: '', label: '' }] }, // runs off the bottom
         { id: 'y', config: 'single', slot: 1, circuits: [{ room: '', label: '' }] }, // collides
       ],
     });

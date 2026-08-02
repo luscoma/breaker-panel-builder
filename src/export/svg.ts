@@ -1,13 +1,14 @@
 import {
   columnOf,
   isIndividuallyMonitored,
+  poleCount,
   roomColor,
   rowOf,
   slotsFor,
   summarize,
   throwsFor,
 } from '../model/panel';
-import { Breaker, COLUMN_SIZE, PanelState, ROWS } from '../model/types';
+import { Breaker, PanelState, ROWS } from '../model/types';
 
 const ROW_H = 34;
 const LABEL_W = 250;
@@ -52,7 +53,7 @@ function truncate(text: string, max: number): string {
 
 /** Total pole positions on a breaker — the unit its throw heights divide. */
 function poleUnits(breaker: Breaker): number {
-  return throwsFor(breaker.config).reduce((sum, t) => sum + t.poles, 0);
+  return poleCount(breaker.config);
 }
 
 function renderBreaker(state: PanelState, breaker: Breaker): string {
@@ -175,11 +176,11 @@ export function renderPanelSvg(state: PanelState): string {
     const midY = y + ROW_H / 2 + 3.5;
     parts.push(
       `<text x="${SPINE_X + SPINE_W / 2 - 6}" y="${midY}" text-anchor="end" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row + 1}</text>`,
+        `fill="${COLORS.muted}">${row * 2 + 1}</text>`,
     );
     parts.push(
       `<text x="${SPINE_X + SPINE_W / 2 + 6}" y="${midY}" text-anchor="start" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row + 1 + COLUMN_SIZE}</text>`,
+        `fill="${COLORS.muted}">${row * 2 + 2}</text>`,
     );
   }
 

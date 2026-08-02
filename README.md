@@ -12,24 +12,27 @@ No backend, no accounts, no database — it builds to plain static files and dep
 A breaker is one of two physical widths. What varies within a width is how many **throws** (switch
 positions) it carries, and whether each throw is one pole (120V) or two poles bridged for 240V.
 
-| Breaker | Slots | Throws | Circuits |
-| --- | --- | --- | --- |
-| Single pole | 1 | 1 | 1 × 120V |
-| Tandem | 1 | 2 | 2 × 120V |
-| Double pole | 2 | 1 | 1 × 240V |
-| Double — 2 × 240V | 2 | 2 | 2 × 240V |
-| Double — 240V + 2 × 120V | 2 | 3 | 1 × 240V between two 120V |
-| Quad | 2 | 4 | 4 × 120V |
+| Breaker | Slots | Throws | Poles | Circuits |
+| --- | --- | --- | --- | --- |
+| Single pole | 1 | 1 | 1 | 1 × 120V |
+| Tandem | 1 | 2 | 2 | 2 × 120V |
+| Double pole | 2 | 1 | 2 | 1 × 240V |
+| Double — 2 × 120V | 2 | 2 | 2 | 2 × 120V |
+| Double — 2 × 240V | 2 | 2 | 4 | 2 × 240V |
+| Double — 240V + 2 × 120V | 2 | 3 | 4 | 1 × 240V between two 120V |
+| Double — 4 × 120V | 2 | 4 | 4 | 4 × 120V |
 
-There is no breaker wider than two slots — a "quad" is a two-slot breaker carrying four throws.
-The palette offers the four common ones; any breaker's throw arrangement can be changed afterwards
-from the editor, and a one-slot breaker can be widened in place when the next slot is free.
+Nothing is wider than two slots. A two-slot breaker holds up to four poles, which is what makes the
+four-throw arrangements possible. The palette offers the four most common breakers; any breaker's
+throw arrangement can be changed after placement from the editor, and a one-slot breaker can be
+widened in place when the slot below it is free.
 
 ## Panel geometry
 
-Slots are numbered down each column: **1–24 down the left, 25–48 down the right**. A two-slot
-breaker occupies slot `n` and `n + 1`, so it cannot start on the last slot of a column — not at 24,
-and not at 48.
+Slots alternate across the panel face: **odd numbers down the left column, even numbers down the
+right**, so each row holds slot `2r-1` and `2r`. A two-slot breaker occupies slot `n` and `n + 2` —
+the next row in the *same* column, which is how it straddles both bus legs. That means a two-slot
+breaker can start anywhere from slot 1 to 46, but not at 47 or 48.
 
 ## Rooms and labels
 
@@ -44,9 +47,12 @@ Every circuit carries a **room** and a **label** — "Family" + "Lights", "Famil
 
 ## Monitoring
 
-A smart panel meters per slot, so a circuit only gets its own monitoring channel when nothing else
-shares the breaker — that is, when the breaker carries a single throw. Tandems and multi-throw
-doubles trade monitoring resolution for circuit count, which is the tradeoff this tool exists to
+A smart panel meters per slot, so a circuit keeps its own monitoring channel exactly when every slot
+its breaker sits in carries one pole. One pole per slot means nothing else shares that CT. That
+holds for a single pole (1 pole, 1 slot), a double pole (2 poles, 2 slots) and a 2 × 120V double
+(2 poles, 2 slots) — but not for a tandem (2 poles crammed into 1 slot) or any four-pole double.
+
+Packing more poles in buys circuits and costs resolution, which is the tradeoff this tool exists to
 make visible. The running total shows how many circuits keep their own channel, and the export marks
 each circuit with a filled dot (own channel) or a hollow one (shared).
 
@@ -85,4 +91,5 @@ compressed with `lz-string`, and written to the URL hash as `#p=…` — debounc
 stays under 1.5 kB of URL.
 
 Nothing is written to local storage — the link is the save file. The format is versioned; links
-from the earlier `v1` layout are rejected rather than decoded into the wrong slots.
+from earlier layouts are rejected rather than decoded into the wrong slots, since what a slot
+number means has changed between versions.

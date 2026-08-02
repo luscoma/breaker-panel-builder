@@ -10,10 +10,12 @@ import {
   moveBreaker,
   occupiedSlots,
   placeBreaker,
+  poleCount,
   removeBreaker,
   removeRoom,
   renameRoom,
   roomUsage,
+  rowOf,
   setCircuitLabel,
   setCircuitRoom,
   setConfig,
@@ -37,12 +39,21 @@ describe('breaker widths and throws', () => {
     expect(circuitCount('tandem')).toBe(2);
   });
 
-  it('gives two-slot breakers between one and four throws', () => {
+  it('gives two-slot breakers every throw arrangement up to four', () => {
     expect(slotsFor('double')).toBe(2);
-    expect(circuitCount('double')).toBe(1);
-    expect(circuitCount('double-2x240')).toBe(2);
-    expect(circuitCount('double-240-2x120')).toBe(3);
-    expect(circuitCount('double-4x120')).toBe(4);
+    expect(circuitCount('double')).toBe(1); // 1 x 240V
+    expect(circuitCount('double-2x120')).toBe(2); // 2 x 120V
+    expect(circuitCount('double-2x240')).toBe(2); // 2 x 240V
+    expect(circuitCount('double-240-2x120')).toBe(3); // 240V + 2 x 120V
+    expect(circuitCount('double-4x120')).toBe(4); // 4 x 120V
+  });
+
+  it('never puts more than four poles on a breaker', () => {
+    for (const config of ALL_CONFIGS) {
+      expect(poleCount(config)).toBeLessThanOrEqual(4);
+    }
+    expect(poleCount('double-2x120')).toBe(2);
+    expect(poleCount('double-2x240')).toBe(4);
   });
 
   it('models throw voltages correctly', () => {
@@ -54,6 +65,10 @@ describe('breaker widths and throws', () => {
     ]);
     // A quad's 240V pair sits between the two 120V throws.
     expect(throwsFor('double-240-2x120').map((t) => t.voltage)).toEqual([120, 240, 120]);
+    expect(throwsFor('double-2x120')).toEqual([
+      { poles: 1, voltage: 120 },
+      { poles: 1, voltage: 120 },
+    ]);
     expect(throwsFor('double-4x120').every((t) => t.poles === 1)).toBe(true);
   });
 
@@ -64,29 +79,41 @@ describe('breaker widths and throws', () => {
     }
   });
 
-  it('puts a two-slot breaker in slot n and n + 1', () => {
+  it('puts a two-slot breaker in slot n and n + 2, the next row in its column', () => {
     expect(occupiedSlots({ config: 'single', slot: 5 })).toEqual([5]);
     expect(occupiedSlots({ config: 'tandem', slot: 5 })).toEqual([5]);
-    expect(occupiedSlots({ config: 'double', slot: 5 })).toEqual([5, 6]);
-    expect(occupiedSlots({ config: 'double-4x120', slot: 5 })).toEqual([5, 6]);
+    expect(occupiedSlots({ config: 'double', slot: 5 })).toEqual([5, 7]);
+    expect(occupiedSlots({ config: 'double-4x120', slot: 6 })).toEqual([6, 8]);
   });
 
-  it('counts a circuit as individually monitored only on a single-throw breaker', () => {
-    expect(isIndividuallyMonitored('single')).toBe(true);
-    expect(isIndividuallyMonitored('double')).toBe(true);
-    expect(isIndividuallyMonitored('tandem')).toBe(false);
-    expect(isIndividuallyMonitored('double-2x240')).toBe(false);
+  it('counts a circuit as individually monitored at one pole per slot', () => {
+    // One pole per slot means nothing else shares the CT on that slot.
+    expect(isIndividuallyMonitored('single')).toBe(true); // 1 pole, 1 slot
+    expect(isIndividuallyMonitored('double')).toBe(true); // 2 poles, 2 slots
+    expect(isIndividuallyMonitored('double-2x120')).toBe(true); // 2 poles, 2 slots
+    // Packing extra poles into the same slots blurs the circuits together.
+    expect(isIndividuallyMonitored('tandem')).toBe(false); // 2 poles, 1 slot
+    expect(isIndividuallyMonitored('double-2x240')).toBe(false); // 4 poles, 2 slots
     expect(isIndividuallyMonitored('double-240-2x120')).toBe(false);
     expect(isIndividuallyMonitored('double-4x120')).toBe(false);
   });
 });
 
 describe('columns', () => {
-  it('splits the panel into a left and a right column of 24', () => {
+  it('runs odd slots down the left column and even down the right', () => {
     expect(columnOf(1)).toBe(0);
-    expect(columnOf(24)).toBe(0);
-    expect(columnOf(25)).toBe(1);
+    expect(columnOf(3)).toBe(0);
+    expect(columnOf(47)).toBe(0);
+    expect(columnOf(2)).toBe(1);
     expect(columnOf(48)).toBe(1);
+  });
+
+  it('pairs slot 2r-1 and 2r on the same row', () => {
+    expect(rowOf(1)).toBe(1);
+    expect(rowOf(2)).toBe(1);
+    expect(rowOf(3)).toBe(2);
+    expect(rowOf(47)).toBe(24);
+    expect(rowOf(48)).toBe(24);
   });
 });
 
@@ -99,29 +126,35 @@ describe('canPlace', () => {
     expect(canPlace(state, 'single', 48)).toBe(true);
   });
 
-  it('stops a two-slot breaker straddling the two columns', () => {
+  it('stops a two-slot breaker running past the bottom row of its column', () => {
     const state = emptyPanel();
-    expect(canPlace(state, 'double', 23)).toBe(true);
-    expect(canPlace(state, 'double', 24)).toBe(false); // 24 is the last left slot
-    expect(canPlace(state, 'double', 25)).toBe(true);
-    expect(canPlace(state, 'double', 47)).toBe(true);
-    expect(canPlace(state, 'double', 48)).toBe(false); // runs off the bottom
+    expect(canPlace(state, 'double', 45)).toBe(true); // 45 and 47
+    expect(canPlace(state, 'double', 46)).toBe(true); // 46 and 48
+    expect(canPlace(state, 'double', 47)).toBe(false); // would need 49
+    expect(canPlace(state, 'double', 48)).toBe(false); // would need 50
+  });
+
+  it('keeps a two-slot breaker within one column', () => {
+    for (const slot of [1, 2, 21, 22]) {
+      const slots = occupiedSlots({ config: 'double', slot });
+      expect(columnOf(slots[0])).toBe(columnOf(slots[1]));
+    }
   });
 
   it('rejects collisions with existing breakers', () => {
-    const state = placeBreaker(emptyPanel(), 'double', 3); // occupies 3 and 4
+    const state = placeBreaker(emptyPanel(), 'double', 3); // occupies 3 and 5
     expect(canPlace(state, 'single', 3)).toBe(false);
-    expect(canPlace(state, 'single', 4)).toBe(false);
-    expect(canPlace(state, 'single', 2)).toBe(true);
-    expect(canPlace(state, 'single', 5)).toBe(true);
-    expect(canPlace(state, 'double', 2)).toBe(false); // would need 2 and 3
+    expect(canPlace(state, 'single', 5)).toBe(false);
+    expect(canPlace(state, 'single', 4)).toBe(true); // other column, unaffected
+    expect(canPlace(state, 'single', 7)).toBe(true);
+    expect(canPlace(state, 'double', 1)).toBe(false); // would need 1 and 3
   });
 
   it('ignores the breaker being moved when checking collisions', () => {
     const state = placeBreaker(emptyPanel(), 'double', 3);
     const id = state.breakers[0].id;
-    expect(canPlace(state, 'double', 4)).toBe(false);
-    expect(canPlace(state, 'double', 4, id)).toBe(true);
+    expect(canPlace(state, 'double', 5)).toBe(false);
+    expect(canPlace(state, 'double', 5, id)).toBe(true);
   });
 });
 
@@ -138,7 +171,7 @@ describe('mutations', () => {
 
   it('refuses invalid placements without changing state', () => {
     const state = emptyPanel();
-    expect(placeBreaker(state, 'double', 24)).toBe(state);
+    expect(placeBreaker(state, 'double', 47)).toBe(state);
   });
 
   it('moves a breaker only to a legal slot', () => {
@@ -146,7 +179,7 @@ describe('mutations', () => {
     const id = state.breakers[0].id;
     state = moveBreaker(state, id, 10);
     expect(state.breakers[0].slot).toBe(10);
-    expect(moveBreaker(state, id, 24)).toBe(state); // would straddle the columns
+    expect(moveBreaker(state, id, 47)).toBe(state); // would run off the bottom
   });
 
   it('keeps circuit labels when the throw arrangement changes', () => {
@@ -161,16 +194,16 @@ describe('mutations', () => {
     expect(state.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2', '', '']);
   });
 
-  it('allows a width change only when the extra slot is free', () => {
+  it('allows a width change only when the slot below is free', () => {
     let state = placeBreaker(emptyPanel(), 'single', 1);
-    state = placeBreaker(state, 'single', 2);
+    state = placeBreaker(state, 'single', 3);
     const first = state.breakers[0].id;
-    expect(setConfig(state, first, 'double')).toBe(state); // slot 2 is taken
+    expect(setConfig(state, first, 'double')).toBe(state); // slot 3 is taken
 
     state = removeBreaker(state, state.breakers[1].id);
     state = setConfig(state, first, 'double');
     expect(state.breakers[0].config).toBe('double');
-    expect(occupiedSlots(state.breakers[0])).toEqual([1, 2]);
+    expect(occupiedSlots(state.breakers[0])).toEqual([1, 3]);
   });
 });
 
@@ -235,13 +268,14 @@ describe('summarize', () => {
     state = placeBreaker(state, 'single', 1); // 1 circuit, monitored, 1 slot
     state = placeBreaker(state, 'tandem', 2); // 2 circuits, shared, 1 slot
     state = placeBreaker(state, 'double', 3); // 1 circuit, monitored, 2 slots
-    state = placeBreaker(state, 'double-4x120', 5); // 4 circuits, shared, 2 slots
+    state = placeBreaker(state, 'double-4x120', 4); // 4 circuits, shared, 2 slots
+    state = placeBreaker(state, 'double-2x120', 7); // 2 circuits, both monitored
 
     expect(summarize(state)).toEqual({
-      breakers: 4,
-      circuits: 8,
-      monitoredCircuits: 2,
-      usedSlots: 6,
+      breakers: 5,
+      circuits: 10,
+      monitoredCircuits: 4,
+      usedSlots: 8,
     });
   });
 

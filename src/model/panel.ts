@@ -2,7 +2,6 @@ import {
   Breaker,
   BreakerConfig,
   CONFIGS,
-  COLUMN_SIZE,
   CircuitLabel,
   DEFAULT_LABELS,
   PanelState,
@@ -13,7 +12,7 @@ import {
 } from './types';
 
 export function emptyPanel(): PanelState {
-  return { v: 2, name: 'Main Panel', rooms: [], breakers: [] };
+  return { v: 3, name: 'Main Panel', rooms: [], breakers: [] };
 }
 
 export function slotsFor(config: BreakerConfig): 1 | 2 {
@@ -29,27 +28,38 @@ export function circuitCount(config: BreakerConfig): number {
   return CONFIGS[config].throws.length;
 }
 
+/** Total pole positions the breaker consumes on the bus. */
+export function poleCount(config: BreakerConfig): number {
+  return throwsFor(config).reduce((sum, t) => sum + t.poles, 0);
+}
+
 /**
- * A smart panel meters per slot, so a circuit only gets its own channel when
- * nothing else shares the breaker — i.e. the breaker carries a single throw.
+ * A smart panel meters per slot, so a circuit keeps its own channel only when
+ * every slot the breaker sits in carries exactly one of its poles. One pole per
+ * slot means nothing shares a CT; pack more poles in and the circuits blur
+ * together. That covers 1 × 120V, 1 × 240V and 2 × 120V, but not a tandem or
+ * any four-pole double.
  */
 export function isIndividuallyMonitored(config: BreakerConfig): boolean {
-  return circuitCount(config) === 1;
+  return poleCount(config) === slotsFor(config);
 }
 
-/** 0 for the left column (slots 1..24), 1 for the right (25..48). */
+/** 0 for the left column (odd slots), 1 for the right (even slots). */
 export function columnOf(slot: number): 0 | 1 {
-  return slot <= COLUMN_SIZE ? 0 : 1;
+  return slot % 2 === 1 ? 0 : 1;
 }
 
-/** 1-based position down the column. */
+/** 1-based row down the panel face; each row holds slot 2r-1 and 2r. */
 export function rowOf(slot: number): number {
-  return slot <= COLUMN_SIZE ? slot : slot - COLUMN_SIZE;
+  return Math.ceil(slot / 2);
 }
 
-/** Slots occupied: [slot] or [slot, slot + 1] for a two-slot breaker. */
+/**
+ * Slots occupied: [slot] or, for a two-slot breaker, [slot, slot + 2] — the
+ * next row in the same column, which is how a breaker straddles both bus legs.
+ */
 export function occupiedSlots(breaker: Pick<Breaker, 'config' | 'slot'>): number[] {
-  return slotsFor(breaker.config) === 2 ? [breaker.slot, breaker.slot + 1] : [breaker.slot];
+  return slotsFor(breaker.config) === 2 ? [breaker.slot, breaker.slot + 2] : [breaker.slot];
 }
 
 export function buildOccupancy(state: PanelState): Map<number, Breaker> {
@@ -62,8 +72,8 @@ export function buildOccupancy(state: PanelState): Map<number, Breaker> {
 
 /**
  * Whether a breaker of `config` fits with its top at `slot`. A two-slot breaker
- * must keep both slots in the same column, so it cannot start on the last slot
- * of a column. `ignoreId` excludes a breaker from collision checks, for moves.
+ * runs to slot + 2, so it cannot start in the bottom row of either column.
+ * `ignoreId` excludes a breaker from collision checks, for moves.
  */
 export function canPlace(
   state: PanelState,

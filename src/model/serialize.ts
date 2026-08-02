@@ -8,6 +8,7 @@ const CODE_BY_CONFIG: Record<BreakerConfig, string> = {
   single: 's',
   tandem: 't',
   double: 'd',
+  'double-2x120': 'd2',
   'double-2x240': 'q2',
   'double-240-2x120': 'q3',
   'double-4x120': 'q4',
@@ -27,7 +28,7 @@ interface WireBreaker {
 }
 
 interface WireState {
-  v: 2;
+  v: 3;
   n: string;
   r: string[];
   b: WireBreaker[];
@@ -36,7 +37,7 @@ interface WireState {
 export function encodeState(state: PanelState): string {
   const roomIndex = new Map(state.rooms.map((room, i) => [room, i]));
   const wire: WireState = {
-    v: 2,
+    v: 3,
     n: state.name,
     r: state.rooms,
     b: state.breakers.map((b) => ({
@@ -64,7 +65,7 @@ export function decodeState(encoded: string): PanelState | null {
   }
   if (typeof wire !== 'object' || wire === null) return null;
   const w = wire as Partial<WireState>;
-  if (w.v !== 2 || !Array.isArray(w.b)) return null;
+  if (w.v !== 3 || !Array.isArray(w.b)) return null;
 
   const rooms = Array.isArray(w.r) ? w.r.filter((r): r is string => typeof r === 'string') : [];
   let state: PanelState = {

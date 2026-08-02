@@ -1,13 +1,14 @@
 /**
  * A breaker is one of two physical widths — it occupies either one slot or two
- * adjacent slots in the same column. What varies within a width is the number
- * of throws (switch positions) on it, and whether each throw is one pole (120V)
- * or two poles bridged for 240V.
+ * vertically adjacent slots in the same column. What varies within a width is
+ * the number of throws (switch positions) on it, and whether each throw is one
+ * pole (120V) or two poles bridged for 240V.
  */
 export type BreakerConfig =
   | 'single'
   | 'tandem'
   | 'double'
+  | 'double-2x120'
   | 'double-2x240'
   | 'double-240-2x120'
   | 'double-4x120';
@@ -33,7 +34,7 @@ export interface Breaker {
 }
 
 export interface PanelState {
-  v: 2;
+  v: 3;
   name: string;
   /** Room list in insertion order; also fixes each room's colour. */
   rooms: string[];
@@ -54,22 +55,29 @@ export const CONFIGS: Record<BreakerConfig, ConfigDef> = {
   single: { label: 'Single pole — 1 × 120V', short: 'Single', slots: 1, throws: [P1] },
   tandem: { label: 'Tandem — 2 × 120V', short: 'Tandem', slots: 1, throws: [P1, P1] },
   double: { label: 'Double pole — 1 × 240V', short: 'Double', slots: 2, throws: [P2] },
+  'double-2x120': { label: 'Double — 2 × 120V', short: '2 × 120V', slots: 2, throws: [P1, P1] },
   'double-2x240': { label: 'Double — 2 × 240V', short: '2 × 240V', slots: 2, throws: [P2, P2] },
   'double-240-2x120': {
     label: 'Double — 1 × 240V + 2 × 120V',
     short: '240V + 2 × 120V',
     slots: 2,
     // The two 240V poles sit in the middle, with a 120V throw above and below,
-    // which is how a real quad breaker is built.
+    // which is how a real four-throw double is built.
     throws: [P1, P2, P1],
   },
-  'double-4x120': { label: 'Quad — 4 × 120V', short: 'Quad', slots: 2, throws: [P1, P1, P1, P1] },
+  'double-4x120': {
+    label: 'Double — 4 × 120V',
+    short: '4 × 120V',
+    slots: 2,
+    throws: [P1, P1, P1, P1],
+  },
 };
 
 export const ALL_CONFIGS: BreakerConfig[] = [
   'single',
   'tandem',
   'double',
+  'double-2x120',
   'double-2x240',
   'double-240-2x120',
   'double-4x120',
@@ -79,9 +87,11 @@ export const ALL_CONFIGS: BreakerConfig[] = [
 export const PALETTE_CONFIGS: BreakerConfig[] = ['single', 'tandem', 'double', 'double-4x120'];
 
 export const SLOT_COUNT = 48;
-/** Slots per column: left column is 1..24, right column is 25..48. */
-export const COLUMN_SIZE = 24;
-export const ROWS = COLUMN_SIZE;
+/**
+ * Slots alternate across the panel face: odd numbers run down the left column,
+ * even numbers down the right, so each row holds slot 2r-1 and 2r.
+ */
+export const ROWS = SLOT_COUNT / 2;
 
 /** Suggested circuit labels; the field still accepts anything typed. */
 export const DEFAULT_LABELS = [

@@ -604,3 +604,7 @@ body {
   color: var(--muted);
   white-space: nowrap;
 }
+
+.breaker--double-2x120 {
+  border-left: 3px solid #38bdf8;
+}
