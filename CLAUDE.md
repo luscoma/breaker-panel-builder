@@ -10,6 +10,9 @@ gets right, then push.
 Intermediate commits on the working branch do not need one; push those freely as
 you go. Docs-only changes never need one.
 
+Work currently goes straight to `main` — the owner has said that is fine for
+now, though it may change as the project grows. Ask before assuming otherwise.
+
 Three such reviews have run so far and each found real defects the test suite
 missed, mostly in event ordering and rendering that unit tests cannot reach.
 
