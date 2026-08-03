@@ -38,7 +38,9 @@ const COLORS = {
   handle: '#374151',
   v240: '#b45309',
   v120: '#1d4ed8',
-  shared: '#b45309',
+  // Deliberately not v240's orange: a marked slot number sits inches from the
+  // 240V badges and must not read as one.
+  shared: '#a21caf',
 };
 
 /** Half of a surrogate pair with no partner — invalid in a URI-encoded SVG. */

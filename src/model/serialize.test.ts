@@ -165,6 +165,38 @@ describe('URL state', () => {
     expect(decoded.breakers.length).toBeLessThanOrEqual(48);
   });
 
+  it('gives every decoded breaker a globally unique id', () => {
+    // Positional ids collide across panels, which let a loaded link re-point an
+    // open editor at an unrelated breaker — and its delete button with it.
+    const a = decodeState(encodeState(sampleState()))!;
+    const b = decodeState(encodeState(sampleState()))!;
+    const ids = [...a.breakers, ...b.breakers].map((x) => x.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // No id from one decode may appear in another.
+    const aIds = new Set(a.breakers.map((x) => x.id));
+    expect(b.breakers.some((x) => aIds.has(x.id))).toBe(false);
+  });
+
+  it('does not reuse ids already handed out by placeBreaker', () => {
+    let live = placeBreaker(emptyPanel(), 'single', 1);
+    live = placeBreaker(live, 'single', 2);
+    const decoded = decodeState(encodeState(sampleState()))!;
+    const liveIds = new Set(live.breakers.map((b) => b.id));
+    expect(decoded.breakers.some((b) => liveIds.has(b.id))).toBe(false);
+  });
+
+  it('caps an absurdly long label rather than carrying it into state', () => {
+    const payload = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: 5,
+        n: 'P',
+        r: [],
+        b: [{ c: 's', s: 1, x: [[-1, 'x'.repeat(50_000)]] }],
+      }),
+    );
+    expect(decodeState(payload)!.breakers[0].circuits[0].label.length).toBeLessThanOrEqual(200);
+  });
+
   it('ignores an unknown breaker configuration', () => {
     const state = sampleState();
     const encoded = encodeState({

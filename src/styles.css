@@ -9,7 +9,7 @@
   --shared: #f0b429;
   --danger: #f87171;
   --row-h: 42px;
-  --spine-w: 46px;
+  --spine-w: 50px;
 
   color-scheme: dark;
 }
@@ -296,7 +296,15 @@ body {
 
 .spine__num {
   padding: 1px 2px;
-  font: inherit;
+  /* Not the `font` shorthand: it would reset the tabular figures set on .spine
+     and make digits shift when a slot's marked state flips. */
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  /* A button's UA style resets this, so inheriting from .spine is not enough;
+     without it the marked numbers use proportional figures and the digits
+     shift whenever a slot's marked state flips. */
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   background: none;
   border: none;
@@ -307,12 +315,25 @@ body {
  * invisible to anyone colourblind, so it carries an underline too.
  */
 .spine__num--shared {
+  position: relative;
   color: var(--shared);
   font-weight: 700;
   border-bottom: 2px solid var(--shared);
   border-radius: 2px;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/*
+ * A single digit is about 10 x 15px, far under the 24px minimum for a touch
+ * target — and tapping this is the whole mobile affordance, since a phone has
+ * no hover. Expand the hit area without moving anything: the pseudo-element
+ * takes the parent's clicks, so the marker stays visually compact.
+ */
+.spine__num--shared::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
 }
 
 .spine__num--shared:hover,
@@ -579,8 +600,8 @@ body {
 @media (max-width: 480px) {
   :root {
     --row-h: 40px;
-    /* Wide enough that two two-digit space numbers never touch. */
-    --spine-w: 44px;
+    /* Wide enough for two two-digit numbers and two 24px touch targets. */
+    --spine-w: 54px;
   }
 
   .app {

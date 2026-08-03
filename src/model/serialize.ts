@@ -1,5 +1,5 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
-import { canPlace, circuitCount, emptyPanel } from './panel';
+import { canPlace, circuitCount, emptyPanel, newId } from './panel';
 import {
   BreakerConfig,
   CircuitLabel,
@@ -15,6 +15,9 @@ import {
  * even when every entry is invalid and nothing is ever placed.
  */
 const MAX_WIRE_BREAKERS = SLOT_COUNT * 4;
+
+/** Far longer than any label the UI shows; stops a crafted link carrying megabytes. */
+const MAX_LABEL_LENGTH = 200;
 
 // Short codes keep shared links small; the wire format is deliberately
 // separate from PanelState so internal ids never leak into URLs.
@@ -120,13 +123,13 @@ export function decodeState(encoded: string): PanelState | null {
     const circuits = Array.from({ length }, (_, i): CircuitLabel => {
       const entry = entries[i];
       const index = Array.isArray(entry) && typeof entry[0] === 'number' ? entry[0] : -1;
-      const label = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
-      return { room: slots[index] ?? '', label };
+      const raw = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
+      return { room: slots[index] ?? '', label: raw.slice(0, MAX_LABEL_LENGTH) };
     });
 
     state = {
       ...state,
-      breakers: [...state.breakers, { id: `u${state.breakers.length}`, config, slot: s, circuits }],
+      breakers: [...state.breakers, { id: newId(), config, slot: s, circuits }],
     };
   }
   return state;

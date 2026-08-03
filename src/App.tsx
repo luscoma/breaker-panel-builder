@@ -145,6 +145,10 @@ export default function App() {
       if (window.location.hash === lastHashRef.current) return;
       const loaded = stateFromHash(window.location.hash);
       if (loaded) {
+        // The incoming panel's breakers are unrelated to whatever was selected,
+        // so drop the selection rather than let the editor rebind to a stranger.
+        setSelectedId(null);
+        setRoomsOpen(false);
         dispatch({ type: 'load', state: loaded });
         return;
       }
@@ -311,7 +315,7 @@ export default function App() {
             <span className="spine__num spine__num--shared" aria-hidden="true">
               7
             </span>
-            shares a monitoring channel
+            marked slots share a monitoring channel
           </span>
         </div>
 

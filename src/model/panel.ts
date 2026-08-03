@@ -97,7 +97,12 @@ export function canPlace(
 }
 
 let idCounter = 0;
-function newId(): string {
+/**
+ * Unique for the life of the tab. Decoding uses it too: positional ids would
+ * collide across panels, so loading a link could silently re-point an open
+ * editor at a different breaker.
+ */
+export function newId(): string {
   idCounter += 1;
   return `b${Date.now().toString(36)}${idCounter.toString(36)}`;
 }
