@@ -9,7 +9,7 @@ import {
   setCircuitRoom,
   setName,
 } from './panel';
-import { decodeState, encodeState, stateFromHash, stateToHash } from './serialize';
+import { decodeState, encodeState, hashHasPanel, stateFromHash, stateToHash } from './serialize';
 import { MAX_ROOMS } from './types';
 
 function sampleState() {
@@ -73,6 +73,14 @@ describe('URL state', () => {
     expect(encodeState(state).length).toBeLessThan(1500);
   });
 
+  it('recognises a hash that claims to carry a panel even when it will not decode', () => {
+    // The app uses this to tell "no link" from "unreadable link" so it can say so.
+    expect(hashHasPanel('#p=anything')).toBe(true);
+    expect(hashHasPanel('#p=')).toBe(false);
+    expect(hashHasPanel('#other')).toBe(false);
+    expect(hashHasPanel('')).toBe(false);
+  });
+
   it('returns null for unusable payloads', () => {
     expect(decodeState('')).toBeNull();
     expect(decodeState('not-valid-lz-string!!')).toBeNull();
@@ -80,46 +88,15 @@ describe('URL state', () => {
     expect(stateFromHash('')).toBeNull();
   });
 
-  it('rejects formats older than v3 rather than mis-placing their breakers', () => {
-    // v1 and v2 numbered slots differently, so their slot values mean something
-    // else here. Decoding one would silently misplace every breaker.
-    for (const version of [1, 2]) {
+  it('refuses every older format outright', () => {
+    // Earlier versions numbered slots and ordered throws differently, so
+    // decoding one would quietly build a different panel than the link meant.
+    for (const version of [1, 2, 3, 4]) {
       const old = compressToEncodedURIComponent(
-        JSON.stringify({ v: version, n: 'Old Panel', r: [], b: [{ c: 'd', s: 3, x: [] }] }),
+        JSON.stringify({ v: version, n: 'Old Panel', r: [], b: [{ c: 'q3', s: 1, x: [] }] }),
       );
       expect(decodeState(old)).toBeNull();
     }
-  });
-
-  it('migrates a v3 link, moving its 240V label onto the reordered throw', () => {
-    // v3 ordered this arrangement's throws [120, 240, 120]; v4 puts 240 first.
-    const v3 = compressToEncodedURIComponent(
-      JSON.stringify({
-        v: 3,
-        n: 'Old Panel',
-        r: ['Kitchen'],
-        b: [{ c: 'q3', s: 1, x: [[0, 'Disposal'], [0, 'Range'], [0, 'Lights']] }],
-      }),
-    );
-    const decoded = decodeState(v3)!;
-    // Range was the 240V circuit in v3 and must still be the 240V circuit now.
-    expect(decoded.breakers[0].circuits.map((c) => c.label)).toEqual([
-      'Range',
-      'Disposal',
-      'Lights',
-    ]);
-  });
-
-  it('leaves other arrangements untouched when migrating a v3 link', () => {
-    const v3 = compressToEncodedURIComponent(
-      JSON.stringify({
-        v: 3,
-        n: 'Old Panel',
-        r: [],
-        b: [{ c: 't', s: 1, x: [[-1, 'One'], [-1, 'Two']] }],
-      }),
-    );
-    expect(decodeState(v3)!.breakers[0].circuits.map((c) => c.label)).toEqual(['One', 'Two']);
   });
 
   it('drops individually invalid breakers instead of failing the panel', () => {
@@ -148,7 +125,7 @@ describe('URL state', () => {
   it('keeps room indices aligned when the room array holds junk', () => {
     const payload = compressToEncodedURIComponent(
       JSON.stringify({
-        v: 3,
+        v: 5,
         n: 'P',
         r: [123, 'Kitchen'],
         b: [{ c: 's', s: 1, x: [[1, 'Range']] }],
@@ -183,7 +160,7 @@ describe('URL state', () => {
 
   it('refuses to decode more breakers than the panel has slots', () => {
     const b = Array.from({ length: 5000 }, () => ({ c: 's', s: 1, x: [] }));
-    const payload = compressToEncodedURIComponent(JSON.stringify({ v: 3, n: 'P', r: [], b }));
+    const payload = compressToEncodedURIComponent(JSON.stringify({ v: 5, n: 'P', r: [], b }));
     const decoded = decodeState(payload)!;
     expect(decoded.breakers.length).toBeLessThanOrEqual(48);
   });

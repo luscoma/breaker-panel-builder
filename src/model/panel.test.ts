@@ -12,14 +12,13 @@ import {
   occupiedSlots,
   placeBreaker,
   poleCount,
-  poleLayout,
-  poleRuns,
   removeBreaker,
   removeRoom,
   renameRoom,
   roomColor,
   roomUsage,
   rowOf,
+  sharedSlots,
   setCircuitLabel,
   setCircuitRoom,
   visibleCircuits,
@@ -68,8 +67,8 @@ describe('breaker widths and throws', () => {
       { poles: 2, voltage: 240 },
       { poles: 2, voltage: 240 },
     ]);
-    // The 240V throw is listed first, matching the arrangement's name.
-    expect(throwsFor('double-240-2x120').map((t) => t.voltage)).toEqual([240, 120, 120]);
+    // Listed as the face draws them, 240V in the middle.
+    expect(throwsFor('double-240-2x120').map((t) => t.voltage)).toEqual([120, 240, 120]);
     expect(throwsFor('double-2x120')).toEqual([
       { poles: 1, voltage: 120 },
       { poles: 1, voltage: 120 },
@@ -104,50 +103,42 @@ describe('breaker widths and throws', () => {
   });
 });
 
-describe('pole layout', () => {
-  it('assigns every pole position to exactly one throw', () => {
+describe('throw order on the breaker face', () => {
+  it('puts the 240V throw between the two 120V ones', () => {
+    // Drawn top to bottom, so the 240V sits in the middle at half the height
+    // and the arrangement is recognisable without opening the editor.
+    expect(throwsFor('double-240-2x120').map((t) => `${t.voltage}/${t.poles}`)).toEqual([
+      '120/1',
+      '240/2',
+      '120/1',
+    ]);
+  });
+
+  it('gives each throw a height share equal to its pole count', () => {
     for (const config of ALL_CONFIGS) {
-      const layout = poleLayout(config);
-      expect(layout).toHaveLength(poleCount(config));
-      // Each throw must claim exactly as many poles as it declares.
-      throwsFor(config).forEach((t, index) => {
-        expect(layout.filter((p) => p === index)).toHaveLength(t.poles);
-      });
+      const total = throwsFor(config).reduce((sum, t) => sum + t.poles, 0);
+      expect(total).toBe(poleCount(config));
     }
+    // A 1 x 240, 2 x 120 divides into quarters: 1 + 2 + 1 of four poles.
+    expect(throwsFor('double-240-2x120').map((t) => t.poles)).toEqual([1, 2, 1]);
+    expect(poleCount('double-240-2x120')).toBe(4);
+  });
+});
+
+describe('shared slots', () => {
+  it('marks every slot of a breaker that cannot be metered individually', () => {
+    let state = emptyPanel();
+    state = placeBreaker(state, 'tandem', 3); // 2 poles in 1 slot
+    state = placeBreaker(state, 'double-4x120', 5); // 4 poles across 5 and 7
+    expect([...sharedSlots(state)].sort((a, b) => a - b)).toEqual([3, 5, 7]);
   });
 
-  it('ties the 240V throw across the outer poles on a four-pole double', () => {
-    // Positions 1 and 4 are the tied 240V pair; 2 and 3 nest inside it.
-    expect(poleLayout('double-2x240')).toEqual([0, 1, 1, 0]);
-    expect(poleLayout('double-240-2x120')).toEqual([0, 1, 2, 0]);
-  });
-
-  it('stacks throws in order for the ordinary arrangements', () => {
-    expect(poleLayout('single')).toEqual([0]);
-    expect(poleLayout('tandem')).toEqual([0, 1]);
-    expect(poleLayout('double')).toEqual([0, 0]);
-    expect(poleLayout('double-2x120')).toEqual([0, 1]);
-    expect(poleLayout('double-4x120')).toEqual([0, 1, 2, 3]);
-  });
-
-  it('splits a tied throw into two drawable runs', () => {
-    const runs = poleRuns('double-240-2x120');
-    expect(runs).toEqual([
-      { throwIndex: 0, start: 0, length: 1, isFirst: true },
-      { throwIndex: 1, start: 1, length: 1, isFirst: true },
-      { throwIndex: 2, start: 2, length: 1, isFirst: true },
-      { throwIndex: 0, start: 3, length: 1, isFirst: false },
-    ]);
-  });
-
-  it('keeps a contiguous throw as a single run', () => {
-    expect(poleRuns('double')).toEqual([{ throwIndex: 0, start: 0, length: 2, isFirst: true }]);
-    // The inner 240V pair of a 2 x 240 is contiguous; the outer one is not.
-    expect(poleRuns('double-2x240')).toEqual([
-      { throwIndex: 0, start: 0, length: 1, isFirst: true },
-      { throwIndex: 1, start: 1, length: 2, isFirst: true },
-      { throwIndex: 0, start: 3, length: 1, isFirst: false },
-    ]);
+  it('leaves one-pole-per-slot breakers unmarked', () => {
+    let state = emptyPanel();
+    state = placeBreaker(state, 'single', 1);
+    state = placeBreaker(state, 'double', 2); // 2 poles across 2 and 4
+    state = placeBreaker(state, 'double-2x120', 6); // 2 poles across 6 and 8
+    expect(sharedSlots(state).size).toBe(0);
   });
 });
 

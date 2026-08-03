@@ -34,7 +34,7 @@ export interface Breaker {
 }
 
 export interface PanelState {
-  v: 4;
+  v: 5;
   name: string;
   /** Room list in insertion order; also fixes each room's colour. */
   rooms: string[];
@@ -61,8 +61,10 @@ export const CONFIGS: Record<BreakerConfig, ConfigDef> = {
     label: '1 × 240, 2 × 120',
     short: '1 × 240, 2 × 120',
     slots: 2,
-    // The 240V throw is listed first so it reads in the same order as the name.
-    throws: [P2, P1, P1],
+    // Listed top to bottom as the breaker face draws them, so the editor's
+    // circuit numbering matches what you see: the 240V sits in the middle at
+    // half the breaker's height with a 120V above and below.
+    throws: [P1, P2, P1],
   },
   'double-4x120': {
     label: 'Quad — 4 × 120V',
@@ -70,22 +72,6 @@ export const CONFIGS: Record<BreakerConfig, ConfigDef> = {
     slots: 2,
     throws: [P1, P1, P1, P1],
   },
-};
-
-/**
- * Which throw sits on each pole position, top to bottom, for the arrangements
- * whose throws are not simply stacked in order. A four-pole breaker ties its
- * *outer* poles (1 and 4) together and nests the remaining throws between
- * them, so a 240V throw can span two non-adjacent positions.
- *
- * This is a drawing concern only — the editor never needs to know which pole a
- * throw lands on. Anything absent here is stacked in throw order.
- */
-export const POLE_LAYOUT: Partial<Record<BreakerConfig, number[]>> = {
-  // outer pair = throw 0 (240V), inner pair = throw 1 (240V)
-  'double-2x240': [0, 1, 1, 0],
-  // outer pair = throw 0 (240V), inner poles = throws 1 and 2 (120V each)
-  'double-240-2x120': [0, 1, 2, 0],
 };
 
 export const ALL_CONFIGS: BreakerConfig[] = [

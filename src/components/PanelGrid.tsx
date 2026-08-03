@@ -1,7 +1,36 @@
 import { BreakerView } from './BreakerView';
 import { Slot } from './Slot';
-import { buildOccupancy, columnOf, rowOf } from '../model/panel';
+import { buildOccupancy, columnOf, rowOf, sharedSlots } from '../model/panel';
 import { PanelState, ROWS, SLOT_COUNT } from '../model/types';
+
+interface SpineNumberProps {
+  slot: number;
+  shared: boolean;
+  onExplain: (slot: number) => void;
+}
+
+/**
+ * A slot's number, marked when that slot's circuits share a monitoring channel.
+ * Monitoring is a property of the slot, not the breaker, so this is where the
+ * marker belongs. Marked numbers are tappable for an explanation, since there
+ * is no hover on a phone.
+ */
+function SpineNumber({ slot, shared, onExplain }: SpineNumberProps) {
+  if (!shared) return <span className="spine__num">{slot}</span>;
+  return (
+    <button
+      type="button"
+      className="spine__num spine__num--shared"
+      title={`Slot ${slot} shares a monitoring channel`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onExplain(slot);
+      }}
+    >
+      {slot}
+    </button>
+  );
+}
 
 interface PanelGridProps {
   state: PanelState;
@@ -11,6 +40,7 @@ interface PanelGridProps {
   roomColor: (room: string) => string | null;
   onSlotTap: (slot: number) => void;
   onBreakerSelect: (id: string) => void;
+  onExplainSlot: (slot: number) => void;
 }
 
 export function PanelGrid({
@@ -20,8 +50,10 @@ export function PanelGrid({
   roomColor,
   onSlotTap,
   onBreakerSelect,
+  onExplainSlot,
 }: PanelGridProps) {
   const occupancy = buildOccupancy(state);
+  const shared = sharedSlots(state);
   const slots = Array.from({ length: SLOT_COUNT }, (_, i) => i + 1);
   const rows = Array.from({ length: ROWS }, (_, i) => i + 1);
 
@@ -44,8 +76,12 @@ export function PanelGrid({
 
         {rows.map((row) => (
           <div className="spine" key={`spine-${row}`} style={{ gridColumn: 2, gridRow: row }}>
-            <span>{row * 2 - 1}</span>
-            <span>{row * 2}</span>
+            <SpineNumber
+              slot={row * 2 - 1}
+              shared={shared.has(row * 2 - 1)}
+              onExplain={onExplainSlot}
+            />
+            <SpineNumber slot={row * 2} shared={shared.has(row * 2)} onExplain={onExplainSlot} />
           </div>
         ))}
 

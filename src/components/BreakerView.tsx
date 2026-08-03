@@ -1,13 +1,5 @@
 import { useDraggable } from '@dnd-kit/core';
-import {
-  columnOf,
-  isIndividuallyMonitored,
-  poleCount,
-  poleRuns,
-  rowOf,
-  slotsFor,
-  throwsFor,
-} from '../model/panel';
+import { columnOf, rowOf, slotsFor, throwsFor } from '../model/panel';
 import { Breaker, PanelState } from '../model/types';
 
 interface BreakerBodyProps {
@@ -17,46 +9,29 @@ interface BreakerBodyProps {
 }
 
 /**
- * The visual face of a breaker, shared by the panel and the drag overlay.
- * Drawn as one block per pole run, so a 240V throw tied across the outer poles
- * appears top and bottom with the nested throws drawn between them.
+ * The visual face of a breaker: one block per throw, sized by how many poles it
+ * takes. A 240V throw is twice the height of a 120V one, so the shape of the
+ * face alone tells you which arrangement you are looking at — a 1 × 240, 2 × 120
+ * reads as a thin, thick, thin stack without opening the editor.
  */
 export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
   const throws = throwsFor(breaker.config);
-  const runs = poleRuns(breaker.config);
-  const poles = poleCount(breaker.config);
-  const monitored = isIndividuallyMonitored(breaker.config);
 
   return (
-    <div
-      className="breaker__poles"
-      style={{ gridTemplateRows: `repeat(${poles}, minmax(0, 1fr))` }}
-    >
-      {runs.map((run, i) => {
-        const t = throws[run.throwIndex];
-        const circuit = breaker.circuits[run.throwIndex] ?? { room: '', label: '' };
+    <div className="breaker__circuits">
+      {throws.map((t, i) => {
+        const circuit = breaker.circuits[i] ?? { room: '', label: '' };
         const room = circuit.room.trim();
         const label = circuit.label.trim();
         const color = room ? roomColor(room) : null;
-        // Two separate ideas: a 2-pole throw is a common trip and gets the tied
-        // handle, whether or not its poles happen to be adjacent; a throw drawn
-        // in more than one run also needs its lower half marked as a repeat.
-        const commonTrip = t.poles === 2;
-        const split = runs.filter((r) => r.throwIndex === run.throwIndex).length > 1;
         const base = [room, label].filter(Boolean).join(' · ') || 'Unlabeled circuit';
-        const title = commonTrip ? `${base} (${t.voltage}V, tied)` : base;
-
-        const classes = ['circuit'];
-        if (commonTrip) classes.push('circuit--tied');
-        if (split) classes.push('circuit--split');
-        if (!run.isFirst) classes.push('circuit--continued');
 
         return (
           <div
-            className={classes.join(' ')}
+            className={`circuit${t.poles === 2 ? ' circuit--tied' : ''}`}
             key={i}
-            style={{ gridRow: `${run.start + 1} / span ${run.length}` }}
-            title={title}
+            style={{ flexGrow: t.poles }}
+            title={t.poles === 2 ? `${base} (${t.voltage}V, 2-pole)` : base}
           >
             <span className="circuit__handle" aria-hidden="true" />
             <span className="circuit__text">
@@ -69,13 +44,8 @@ export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
                 {label || (room ? '—' : 'unlabeled')}
               </span>
             </span>
-            {!compact && run.isFirst && (
-              <span
-                className={`circuit__volts circuit__volts--${t.voltage}`}
-                data-shared={monitored ? undefined : 'true'}
-              >
-                {t.voltage}
-              </span>
+            {!compact && (
+              <span className={`circuit__volts circuit__volts--${t.voltage}`}>{t.voltage}</span>
             )}
           </div>
         );
@@ -101,7 +71,6 @@ export function BreakerView({ breaker, selected, roomColor, onSelect }: BreakerV
   const column = columnOf(breaker.slot) === 0 ? 1 : 3;
   const row = rowOf(breaker.slot);
   const span = slotsFor(breaker.config);
-  const monitored = isIndividuallyMonitored(breaker.config);
 
   const classes = [
     'breaker',
@@ -110,7 +79,6 @@ export function BreakerView({ breaker, selected, roomColor, onSelect }: BreakerV
   ];
   if (selected) classes.push('breaker--selected');
   if (isDragging) classes.push('breaker--dragging');
-  if (!monitored) classes.push('breaker--shared');
 
   return (
     <div

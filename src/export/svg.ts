@@ -2,8 +2,8 @@ import {
   columnOf,
   isIndividuallyMonitored,
   poleCount,
-  poleRuns,
   roomColor,
+  sharedSlots,
   rowOf,
   slotsFor,
   summarize,
@@ -38,6 +38,7 @@ const COLORS = {
   handle: '#374151',
   v240: '#b45309',
   v120: '#1d4ed8',
+  shared: '#b45309',
 };
 
 /** Half of a surrogate pair with no partner — invalid in a URI-encoded SVG. */
@@ -117,12 +118,10 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
   const y = GRID_TOP + (rowOf(breaker.slot) - 1) * ROW_H;
   const h = slotsFor(breaker.config) * ROW_H;
   const throws = throwsFor(breaker.config);
-  const runs = poleRuns(breaker.config);
   const units = poleUnits(breaker);
   const monitored = isIndividuallyMonitored(breaker.config);
   const innerY = y + 2;
   const innerH = h - 4;
-  const poleH = innerH / units;
 
   const parts: string[] = [];
   parts.push(
@@ -132,28 +131,30 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
 
   const handleW = 16;
   const handleX = left ? x + BODY_W - 3 - handleW - 4 : x + 7;
+  let offset = 0;
 
-  for (const run of runs) {
-    const t = throws[run.throwIndex];
-    const runY = innerY + run.start * poleH;
-    const runH = poleH * run.length;
-    const midY = runY + runH / 2;
+  throws.forEach((t, i) => {
+    // Height is proportional to poles, so a 240V throw is twice a 120V one and
+    // the shape of the face identifies the arrangement.
+    const blockH = (innerH * t.poles) / units;
+    const blockY = innerY + offset;
+    offset += blockH;
+    const midY = blockY + blockH / 2;
 
-    if (run.start > 0) {
+    if (i > 0) {
       parts.push(
-        `<line x1="${x + 3}" y1="${runY}" x2="${x + BODY_W - 3}" y2="${runY}" ` +
+        `<line x1="${x + 3}" y1="${blockY}" x2="${x + BODY_W - 3}" y2="${blockY}" ` +
           `stroke="${COLORS.bodyStroke}" stroke-width="0.75" stroke-dasharray="3 2"/>`,
       );
     }
 
-    // Toggle handle on the spine side of the body, like a real panel face.
-    const handleH = Math.min(runH - 6, 18);
+    // Toggle handle on the spine side of the body, like a real panel face. A
+    // 2-pole throw gets a taller one, the way a common trip looks.
+    const handleH = Math.min(blockH - 6, t.poles === 2 ? 26 : 18);
     parts.push(
       `<rect x="${handleX}" y="${midY - handleH / 2}" width="${handleW}" height="${handleH}" rx="2" ` +
         `fill="${COLORS.handle}"/>`,
     );
-
-    if (!run.isFirst) continue;
 
     const voltColor = t.voltage === 240 ? COLORS.v240 : COLORS.v120;
     const voltX = left ? x + 12 : x + BODY_W - 12;
@@ -163,7 +164,7 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
     );
 
     // Room and label, printed outside the panel body like a directory card.
-    const circuit = breaker.circuits[run.throwIndex] ?? { room: '', label: '' };
+    const circuit = breaker.circuits[i] ?? { room: '', label: '' };
     const room = circuit.room.trim();
     const label = circuit.label.trim();
     const labelX = left ? PAD + LABEL_W - 12 : RIGHT_BODY_X + BODY_W + 12;
@@ -201,23 +202,7 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
       `<circle cx="${dotX}" cy="${midY}" r="2.6" fill="${monitored ? COLORS.ink : 'none'}" ` +
         `stroke="${COLORS.ink}" stroke-width="1"/>`,
     );
-  }
-
-  // Handle tie for a throw split across non-adjacent poles, drawn the way a
-  // panel schedule shows a common trip: a bar joining the two handles.
-  for (let index = 0; index < throws.length; index++) {
-    const mine = runs.filter((r) => r.throwIndex === index);
-    if (mine.length < 2) continue;
-    const first = mine[0];
-    const last = mine[mine.length - 1];
-    const topY = innerY + first.start * poleH + (poleH * first.length) / 2;
-    const bottomY = innerY + last.start * poleH + (poleH * last.length) / 2;
-    const tieX = left ? handleX + handleW + 1 : handleX - 1;
-    parts.push(
-      `<path d="M ${tieX} ${topY} H ${tieX + (left ? 2 : -2)} V ${bottomY} H ${tieX}" ` +
-        `fill="none" stroke="${COLORS.handle}" stroke-width="1.4"/>`,
-    );
-  }
+  });
 
   return parts.join('\n');
 }
@@ -257,6 +242,7 @@ export function renderPanelSvg(state: PanelState): string {
     `<rect x="${SPINE_X}" y="${GRID_TOP}" width="${SPINE_W}" height="${GRID_H}" fill="${COLORS.spine}"/>`,
   );
 
+  const shared = sharedSlots(state);
   for (let row = 0; row < ROWS; row++) {
     const y = GRID_TOP + row * ROW_H;
     if (row > 0) {
@@ -266,14 +252,16 @@ export function renderPanelSvg(state: PanelState): string {
       );
     }
     const midY = y + ROW_H / 2 + 3.5;
-    parts.push(
-      `<text x="${SPINE_X + SPINE_W / 2 - 6}" y="${midY}" text-anchor="end" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row * 2 + 1}</text>`,
-    );
-    parts.push(
-      `<text x="${SPINE_X + SPINE_W / 2 + 6}" y="${midY}" text-anchor="start" font-size="10.5" ` +
-        `fill="${COLORS.muted}">${row * 2 + 2}</text>`,
-    );
+    const num = (slot: number, anchor: 'end' | 'start', nx: number) => {
+      const isShared = shared.has(slot);
+      return (
+        `<text x="${nx}" y="${midY}" text-anchor="${anchor}" font-size="10.5" ` +
+        `fill="${isShared ? COLORS.shared : COLORS.muted}"` +
+        `${isShared ? ` font-weight="700" text-decoration="underline"` : ''}>${slot}</text>`
+      );
+    };
+    parts.push(num(row * 2 + 1, 'end', SPINE_X + SPINE_W / 2 - 6));
+    parts.push(num(row * 2 + 2, 'start', SPINE_X + SPINE_W / 2 + 6));
   }
 
   for (const breaker of state.breakers) {
@@ -295,7 +283,7 @@ export function renderPanelSvg(state: PanelState): string {
   parts.push(
     `<circle cx="${PAD + 150}" cy="${footY + 18}" r="2.6" fill="none" stroke="${COLORS.ink}" stroke-width="1"/>` +
       `<text x="${PAD + 159}" y="${footY + 21.5}" font-size="10.5" fill="${COLORS.muted}">` +
-      `shares a monitoring channel</text>`,
+      `shares a monitoring channel (its slot number is marked too)</text>`,
   );
 
   return (

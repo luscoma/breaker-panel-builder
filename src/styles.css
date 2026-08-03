@@ -287,11 +287,51 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 7px;
+  padding: 0 5px;
   font-size: 10.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   z-index: 1;
+}
+
+.spine__num {
+  padding: 1px 2px;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: none;
+}
+
+/*
+ * A slot whose circuits share a monitoring channel. Colour alone would be
+ * invisible to anyone colourblind, so it carries an underline too.
+ */
+.spine__num--shared {
+  color: var(--shared);
+  font-weight: 700;
+  border-bottom: 2px solid var(--shared);
+  border-radius: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.spine__num--shared:hover,
+.spine__num--shared:focus-visible {
+  background: rgba(240, 180, 41, 0.16);
+  outline: none;
+}
+
+.stats__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+/* The legend's sample shows the marker but is not itself a control. */
+.stats__legend .spine__num--shared {
+  cursor: default;
+  pointer-events: none;
 }
 
 /* ---------- breakers ---------- */
@@ -329,27 +369,6 @@ body {
   border-left: 3px solid #34d399;
 }
 
-/* Shared monitoring channel: a cue that survives the badges being hidden. */
-.breaker--shared::after {
-  content: '';
-  position: absolute;
-  top: 4px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--shared);
-  opacity: 0.9;
-  pointer-events: none;
-}
-
-.breaker--left.breaker--shared::after {
-  left: 5px;
-}
-
-.breaker--right.breaker--shared::after {
-  right: 5px;
-}
-
 .breaker--selected {
   box-shadow: 0 0 0 2px var(--accent);
 }
@@ -366,8 +385,9 @@ body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
-.breaker__poles {
-  display: grid;
+.breaker__circuits {
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
@@ -376,6 +396,7 @@ body {
   align-items: center;
   gap: 6px;
   min-height: 0;
+  flex-basis: 0;
   padding: 0 6px;
   overflow: hidden;
   border-top: 1px dashed rgba(255, 255, 255, 0.14);
@@ -385,21 +406,12 @@ body {
   border-top: none;
 }
 
-/* A 2-pole 240V throw is a common trip, whether or not its poles are adjacent. */
+/* A 2-pole throw is a common trip, so its handle reads as one taller switch. */
 .circuit--tied .circuit__handle {
+  height: 62%;
+  max-height: 26px;
   background: linear-gradient(180deg, #e2e8f0 0%, #94a3b8 100%);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-}
-
-.circuit--continued {
-  opacity: 0.72;
-}
-
-.circuit--split.circuit--continued .circuit__text::after {
-  content: '⟂';
-  margin-left: 4px;
-  font-size: 9px;
-  color: var(--muted);
 }
 
 .breaker--left .circuit {
@@ -453,12 +465,6 @@ body {
 .circuit__volts--240 {
   color: #fdba74;
   background: rgba(249, 115, 22, 0.16);
-}
-
-.circuit__volts[data-shared='true']::after {
-  content: '•';
-  margin-left: 3px;
-  color: var(--shared);
 }
 
 /* ---------- editor sheet ---------- */

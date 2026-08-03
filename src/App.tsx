@@ -36,7 +36,7 @@ import {
   slotsFor,
   summarize,
 } from './model/panel';
-import { stateFromHash, stateToHash } from './model/serialize';
+import { hashHasPanel, stateFromHash, stateToHash } from './model/serialize';
 import { BreakerConfig, PanelState, SLOT_COUNT } from './model/types';
 
 type Action =
@@ -87,13 +87,23 @@ function reducer(state: PanelState, action: Action): PanelState {
 
 type ActiveDrag = { kind: 'palette'; config: BreakerConfig } | { kind: 'breaker'; id: string };
 
-function initialState(): PanelState {
-  if (typeof window === 'undefined') return emptyPanel();
-  return stateFromHash(window.location.hash) ?? emptyPanel();
+const REJECTED_LINK = 'That link could not be read — starting a new panel';
+
+/**
+ * Read the panel out of the address bar once, remembering whether a link was
+ * present but unreadable so the app can say so instead of silently starting over.
+ */
+function readInitialHash(): { state: PanelState; rejected: boolean } {
+  if (typeof window === 'undefined') return { state: emptyPanel(), rejected: false };
+  const hash = window.location.hash;
+  const loaded = stateFromHash(hash);
+  if (loaded) return { state: loaded, rejected: false };
+  return { state: emptyPanel(), rejected: hashHasPanel(hash) };
 }
 
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const [initial] = useState(readInitialHash);
+  const [state, dispatch] = useReducer(reducer, initial.state);
   const [selectedConfig, setSelectedConfig] = useState<BreakerConfig | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [roomsOpen, setRoomsOpen] = useState(false);
@@ -107,6 +117,17 @@ export default function App() {
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   );
+
+  const toastTimer = useRef<number | undefined>(undefined);
+  const showToast = useCallback((message: string) => {
+    // One timer, cleared on each call: two identical messages in a row would
+    // otherwise have the first one's timer dismiss the second early.
+    window.clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   // Keep the URL in step with the panel so the address bar is always shareable.
   useEffect(() => {
@@ -125,26 +146,23 @@ export default function App() {
       const loaded = stateFromHash(window.location.hash);
       if (loaded) {
         dispatch({ type: 'load', state: loaded });
-      } else {
-        // Nothing dispatched means the sync effect won't run, so put the
-        // panel's real link back rather than leaving a broken one on screen.
-        window.history.replaceState(null, '', lastHashRef.current || window.location.pathname);
+        return;
       }
+      if (hashHasPanel(window.location.hash)) showToast(REJECTED_LINK);
+      // Nothing dispatched means the sync effect won't run, so put the panel's
+      // own link back rather than leaving an unreadable one on screen.
+      window.history.replaceState(null, '', lastHashRef.current || window.location.pathname);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [showToast]);
 
-  const toastTimer = useRef<number | undefined>(undefined);
-  const showToast = useCallback((message: string) => {
-    // One timer, cleared on each call: two identical messages in a row would
-    // otherwise have the first one's timer dismiss the second early.
-    window.clearTimeout(toastTimer.current);
-    setToast(message);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2400);
-  }, []);
-
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  // A link that arrived unreadable is cleared out rather than left in the bar.
+  useEffect(() => {
+    if (!initial.rejected) return;
+    showToast(REJECTED_LINK);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, [initial.rejected, showToast]);
 
   const colorForRoom = useCallback((room: string) => roomColor(state, room), [state]);
   const labels = useMemo(() => knownLabels(state), [state]);
@@ -289,6 +307,12 @@ export default function App() {
           <span>
             <strong>{stats.usedSlots}</strong>/{SLOT_COUNT} slots
           </span>
+          <span className="stats__legend">
+            <span className="spine__num spine__num--shared" aria-hidden="true">
+              7
+            </span>
+            shares a monitoring channel
+          </span>
         </div>
 
         <Palette
@@ -305,6 +329,9 @@ export default function App() {
           roomColor={colorForRoom}
           onSlotTap={onSlotTap}
           onBreakerSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
+          onExplainSlot={(slot) =>
+            showToast(`Slot ${slot} shares a monitoring channel — its breaker puts more than one circuit on it`)
+          }
         />
 
         {selected && !roomsOpen && (

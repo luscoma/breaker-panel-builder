@@ -42,21 +42,10 @@ interface WireBreaker {
 }
 
 interface WireState {
-  v: 4;
+  v: 5;
   n: string;
   r: string[];
   b: WireBreaker[];
-}
-
-/**
- * v3 listed the 1 x 240, 2 x 120 arrangement's throws as [120, 240, 120].
- * v4 puts the 240V throw first, so a v3 link's first two circuit labels have
- * to swap or they would land on the wrong throws.
- */
-function migrateV3Circuits(config: BreakerConfig, circuits: CircuitLabel[]): CircuitLabel[] {
-  if (config !== 'double-240-2x120' || circuits.length < 2) return circuits;
-  const [first, second, ...rest] = circuits;
-  return [second, first, ...rest];
 }
 
 export function encodeState(state: PanelState): string {
@@ -73,7 +62,7 @@ export function encodeState(state: PanelState): string {
   }
 
   const wire: WireState = {
-    v: 4,
+    v: 5,
     n: state.name,
     r: rooms.slice(0, MAX_ROOMS),
     b: state.breakers.map((b) => ({
@@ -101,11 +90,10 @@ export function decodeState(encoded: string): PanelState | null {
   }
   if (typeof wire !== 'object' || wire === null) return null;
   const w = wire as Partial<WireState>;
-  // v3 differs only in the throw order of one arrangement, so it is migrated
-  // rather than rejected; anything older numbered slots differently and cannot
-  // be read at all.
-  const version: unknown = (wire as { v?: unknown }).v;
-  if ((version !== 4 && version !== 3) || !Array.isArray(w.b)) return null;
+  // Only the current format is readable. Earlier ones numbered slots and
+  // ordered throws differently, so decoding one would quietly produce a
+  // different panel than the link described.
+  if (w.v !== 5 || !Array.isArray(w.b)) return null;
 
   // Positions must be preserved when reading room indices, so a junk entry
   // shifts nothing; only the resulting room list drops the blanks.
@@ -129,13 +117,12 @@ export function decodeState(encoded: string): PanelState | null {
 
     const entries = Array.isArray(x) ? x : [];
     const length = Math.max(circuitCount(config), Math.min(entries.length, MAX_CIRCUITS));
-    const decoded = Array.from({ length }, (_, i): CircuitLabel => {
+    const circuits = Array.from({ length }, (_, i): CircuitLabel => {
       const entry = entries[i];
       const index = Array.isArray(entry) && typeof entry[0] === 'number' ? entry[0] : -1;
       const label = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
       return { room: slots[index] ?? '', label };
     });
-    const circuits = version === 3 ? migrateV3Circuits(config, decoded) : decoded;
 
     state = {
       ...state,
@@ -153,4 +140,9 @@ export function stateFromHash(hash: string): PanelState | null {
   const match = /^#p=(.+)$/.exec(hash);
   if (!match) return null;
   return decodeState(match[1]);
+}
+
+/** Whether a hash claims to carry a panel, regardless of whether it decodes. */
+export function hashHasPanel(hash: string): boolean {
+  return /^#p=.+$/.test(hash);
 }

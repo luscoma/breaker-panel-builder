@@ -19,7 +19,7 @@ positions) it carries, and whether each throw is one pole (120V) or two poles br
 | Double | 2 | 1 | 2 | 1 × 240V |
 | 2 × 120 | 2 | 2 | 2 | 2 × 120V |
 | 2 × 240 | 2 | 2 | 4 | 2 × 240V |
-| 1 × 240, 2 × 120 | 2 | 3 | 4 | 1 × 240V + 2 × 120V |
+| 1 × 240, 2 × 120 | 2 | 3 | 4 | 120V, 240V, 120V top to bottom |
 | Quad | 2 | 4 | 4 | 4 × 120V |
 
 Nothing is wider than two slots. A two-slot breaker holds up to four poles, which is what makes the
@@ -34,19 +34,17 @@ Switching arrangements never costs you typing: an arrangement with fewer throws 
 circuits rather than deleting them, and they come back with their labels intact if you switch to an
 arrangement that has them again.
 
-### How four-pole breakers are wired
+### Reading a breaker's face
 
-A four-pole breaker ties its **outer** poles (positions 1 and 4) together and nests the remaining
-throws between them. So `2 × 240` is an outer 240V pair with a second 240V pair inside it, and
-`1 × 240, 2 × 120` is an outer 240V pair with two independent 120V throws nested inside.
+Each throw is drawn as one block, sized by how many poles it takes, so a 240V throw is twice the
+height of a 120V one. That makes the shape of the face identify the arrangement without opening
+anything: `1 × 240, 2 × 120` reads as thin / thick / thin, `2 × 240` as two equal halves, and a Quad
+as four equal quarters. A 2-pole throw also gets a taller handle, the way a common trip looks.
 
-Both views draw this, slightly differently. In the panel a tied throw appears at the top and bottom
-of the breaker with its label repeated on the lower half, so you can read any row and know what it
-feeds. The export draws the same two blocks joined by a handle tie, but prints the directory entry
-once — repeating it would just be noise on a printed card.
-
-This is presentation only. The editor lists a breaker's throws in order and never asks which pole a
-throw lands on.
+Real four-pole hardware ties its *outer* poles (positions 1 and 4) and nests the other throws
+between them. The app deliberately does not draw that: depicting it literally makes a three-circuit
+breaker render as four blocks, which reads as the wrong breaker. The circuit count, voltages and
+monitoring are all still correct — only the internal pole picture is simplified.
 
 ## Panel geometry
 
@@ -74,8 +72,12 @@ holds for a single pole (1 pole, 1 slot), a double pole (2 poles, 2 slots) and a
 (2 poles, 2 slots) — but not for a tandem (2 poles crammed into 1 slot) or any four-pole double.
 
 Packing more poles in buys circuits and costs resolution, which is the tradeoff this tool exists to
-make visible. The running total shows how many circuits keep their own channel, and the export marks
-each circuit with a filled dot (own channel) or a hollow one (shared).
+make visible.
+
+Because metering is per *slot*, that is where the panel marks it: **the slot number itself turns
+amber and gains an underline** when its circuits share a channel. Tap a marked number for an
+explanation, or read the legend beside the running totals. The export marks the same slot numbers,
+and additionally gives each directory entry a filled dot (own channel) or a hollow one (shared).
 
 ## Sharing and export
 
@@ -111,7 +113,7 @@ compressed with `lz-string`, and written to the URL hash as `#p=…` — debounc
 `history.replaceState`, so it never spams browser history. A panel with 96 fully labelled circuits
 stays under 1.5 kB of URL.
 
-Nothing is written to local storage — the link is the save file. The format is versioned. `v3`
-links are migrated on read (the `1 × 240, 2 × 120` arrangement reordered its throws, so its labels
-are remapped onto the right ones); anything older numbered slots differently and is rejected rather
-than decoded into the wrong slots.
+Nothing is written to local storage — the link is the save file. The format is versioned and only
+the current version is readable: earlier ones numbered slots and ordered throws differently, so
+decoding one would quietly build a different panel than the link described. A link the app cannot
+read is reported in a toast and cleared from the address bar rather than half-applied.
