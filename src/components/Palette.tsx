@@ -1,6 +1,7 @@
 import { useDraggable } from '@dnd-kit/core';
+import { useState } from 'react';
 import { circuitCount, slotsFor } from '../model/panel';
-import { BreakerConfig, CONFIGS, PALETTE_CONFIGS } from '../model/types';
+import { BreakerConfig, CONFIGS, OVERFLOW_CONFIGS, PALETTE_CONFIGS } from '../model/types';
 
 function describe(config: BreakerConfig): string {
   const slots = slotsFor(config);
@@ -45,6 +46,9 @@ interface PaletteProps {
 }
 
 export function Palette({ selectedConfig, onSelectConfig }: PaletteProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const rareSelected = selectedConfig !== null && OVERFLOW_CONFIGS.includes(selectedConfig);
+
   return (
     <div className="palette">
       <div className="palette__items">
@@ -56,10 +60,38 @@ export function Palette({ selectedConfig, onSelectConfig }: PaletteProps) {
             onSelect={onSelectConfig}
           />
         ))}
+        <button
+          type="button"
+          className={`palette__more-btn${rareSelected ? ' palette__more-btn--selected' : ''}`}
+          onClick={() => setMoreOpen((open) => !open)}
+          aria-expanded={moreOpen}
+        >
+          <span className="palette__name">
+            {rareSelected ? CONFIGS[selectedConfig].short : 'More'}
+          </span>
+          <span className="palette__meta">{moreOpen ? 'Hide ▲' : `${OVERFLOW_CONFIGS.length} more ▾`}</span>
+        </button>
       </div>
+
+      {moreOpen && (
+        <div className="palette__overflow">
+          {OVERFLOW_CONFIGS.map((config) => (
+            <PaletteItem
+              key={config}
+              config={config}
+              selected={selectedConfig === config}
+              onSelect={(c) => {
+                onSelectConfig(c);
+                setMoreOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       <p className="palette__hint">
         {selectedConfig
-          ? `Tap an empty slot to place a ${CONFIGS[selectedConfig].short.toLowerCase()} breaker, or tap it again to cancel.`
+          ? `Tap an empty slot to place a ${CONFIGS[selectedConfig].short} breaker, or tap it again to cancel.`
           : 'Drag a breaker onto the panel, or tap one then tap an empty slot. Press and hold a placed breaker to move it; tap it to set rooms and labels.'}
       </p>
     </div>

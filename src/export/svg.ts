@@ -2,6 +2,7 @@ import {
   columnOf,
   isIndividuallyMonitored,
   poleCount,
+  poleRuns,
   roomColor,
   rowOf,
   slotsFor,
@@ -72,37 +73,43 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
   const y = GRID_TOP + (rowOf(breaker.slot) - 1) * ROW_H;
   const h = slotsFor(breaker.config) * ROW_H;
   const throws = throwsFor(breaker.config);
+  const runs = poleRuns(breaker.config);
   const units = poleUnits(breaker);
   const monitored = isIndividuallyMonitored(breaker.config);
+  const innerY = y + 2;
+  const innerH = h - 4;
+  const poleH = innerH / units;
 
   const parts: string[] = [];
   parts.push(
-    `<rect x="${x + 3}" y="${y + 2}" width="${BODY_W - 6}" height="${h - 4}" rx="4" ` +
+    `<rect x="${x + 3}" y="${innerY}" width="${BODY_W - 6}" height="${innerH}" rx="4" ` +
       `fill="${COLORS.body}" stroke="${COLORS.bodyStroke}" stroke-width="1"/>`,
   );
 
-  let offset = 0;
-  throws.forEach((t, i) => {
-    const ch = ((h - 4) * t.poles) / units;
-    const cy = y + 2 + offset;
-    offset += ch;
-    const midY = cy + ch / 2;
+  const handleW = 16;
+  const handleX = left ? x + BODY_W - 3 - handleW - 4 : x + 7;
 
-    if (i > 0) {
+  for (const run of runs) {
+    const t = throws[run.throwIndex];
+    const runY = innerY + run.start * poleH;
+    const runH = poleH * run.length;
+    const midY = runY + runH / 2;
+
+    if (run.start > 0) {
       parts.push(
-        `<line x1="${x + 3}" y1="${cy}" x2="${x + BODY_W - 3}" y2="${cy}" ` +
+        `<line x1="${x + 3}" y1="${runY}" x2="${x + BODY_W - 3}" y2="${runY}" ` +
           `stroke="${COLORS.bodyStroke}" stroke-width="0.75" stroke-dasharray="3 2"/>`,
       );
     }
 
     // Toggle handle on the spine side of the body, like a real panel face.
-    const handleW = 16;
-    const handleH = Math.min(ch - 6, 18);
-    const handleX = left ? x + BODY_W - 3 - handleW - 4 : x + 7;
+    const handleH = Math.min(runH - 6, 18);
     parts.push(
       `<rect x="${handleX}" y="${midY - handleH / 2}" width="${handleW}" height="${handleH}" rx="2" ` +
         `fill="${COLORS.handle}"/>`,
     );
+
+    if (!run.isFirst) continue;
 
     const voltColor = t.voltage === 240 ? COLORS.v240 : COLORS.v120;
     const voltX = left ? x + 12 : x + BODY_W - 12;
@@ -112,7 +119,7 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
     );
 
     // Room and label, printed outside the panel body like a directory card.
-    const circuit = breaker.circuits[i] ?? { room: '', label: '' };
+    const circuit = breaker.circuits[run.throwIndex] ?? { room: '', label: '' };
     const room = circuit.room.trim();
     const label = circuit.label.trim();
     const labelX = left ? PAD + LABEL_W - 12 : RIGHT_BODY_X + BODY_W + 12;
@@ -143,7 +150,23 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
       `<circle cx="${dotX}" cy="${midY}" r="2.6" fill="${monitored ? COLORS.ink : 'none'}" ` +
         `stroke="${COLORS.ink}" stroke-width="1"/>`,
     );
-  });
+  }
+
+  // Handle tie for a throw split across non-adjacent poles, drawn the way a
+  // panel schedule shows a common trip: a bar joining the two handles.
+  for (let index = 0; index < throws.length; index++) {
+    const mine = runs.filter((r) => r.throwIndex === index);
+    if (mine.length < 2) continue;
+    const first = mine[0];
+    const last = mine[mine.length - 1];
+    const topY = innerY + first.start * poleH + (poleH * first.length) / 2;
+    const bottomY = innerY + last.start * poleH + (poleH * last.length) / 2;
+    const tieX = left ? handleX + handleW + 2 : handleX - 2;
+    parts.push(
+      `<path d="M ${tieX} ${topY} H ${tieX + (left ? 3 : -3)} V ${bottomY} H ${tieX}" ` +
+        `fill="none" stroke="${COLORS.handle}" stroke-width="1.4"/>`,
+    );
+  }
 
   return parts.join('\n');
 }

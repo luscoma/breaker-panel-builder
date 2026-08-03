@@ -5,6 +5,7 @@ import {
   CircuitLabel,
   DEFAULT_LABELS,
   MAX_CIRCUITS,
+  POLE_LAYOUT,
   PanelState,
   ROOM_COLORS_DARK,
   ROOM_COLORS_LIGHT,
@@ -13,7 +14,7 @@ import {
 } from './types';
 
 export function emptyPanel(): PanelState {
-  return { v: 3, name: 'Main Panel', rooms: [], breakers: [] };
+  return { v: 4, name: 'Main Panel', rooms: [], breakers: [] };
 }
 
 export function slotsFor(config: BreakerConfig): 1 | 2 {
@@ -43,6 +44,50 @@ export function poleCount(config: BreakerConfig): number {
  */
 export function isIndividuallyMonitored(config: BreakerConfig): boolean {
   return poleCount(config) === slotsFor(config);
+}
+
+/**
+ * Which throw sits on each pole position, top to bottom. Falls back to simply
+ * stacking the throws in order for arrangements with no explicit layout.
+ */
+export function poleLayout(config: BreakerConfig): number[] {
+  const explicit = POLE_LAYOUT[config];
+  if (explicit) return explicit;
+  const layout: number[] = [];
+  throwsFor(config).forEach((t, index) => {
+    for (let pole = 0; pole < t.poles; pole++) layout.push(index);
+  });
+  return layout;
+}
+
+/** A block of adjacent pole positions belonging to one throw. */
+export interface PoleRun {
+  throwIndex: number;
+  /** 0-based first pole position of the run. */
+  start: number;
+  length: number;
+  /** False for the lower half of a throw tied across non-adjacent poles. */
+  isFirst: boolean;
+}
+
+/**
+ * The pole layout expressed as drawable blocks. A throw tied across the outer
+ * poles yields two runs with an unrelated throw drawn between them.
+ */
+export function poleRuns(config: BreakerConfig): PoleRun[] {
+  const layout = poleLayout(config);
+  const runs: PoleRun[] = [];
+  const seen = new Set<number>();
+  layout.forEach((throwIndex, pole) => {
+    const last = runs[runs.length - 1];
+    if (last && last.throwIndex === throwIndex && last.start + last.length === pole) {
+      last.length += 1;
+      return;
+    }
+    runs.push({ throwIndex, start: pole, length: 1, isFirst: !seen.has(throwIndex) });
+    seen.add(throwIndex);
+  });
+  return runs;
 }
 
 /** 0 for the left column (odd slots), 1 for the right (even slots). */

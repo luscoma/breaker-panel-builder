@@ -14,22 +14,35 @@ positions) it carries, and whether each throw is one pole (120V) or two poles br
 
 | Breaker | Slots | Throws | Poles | Circuits |
 | --- | --- | --- | --- | --- |
-| Single pole | 1 | 1 | 1 | 1 × 120V |
+| Single | 1 | 1 | 1 | 1 × 120V |
 | Tandem | 1 | 2 | 2 | 2 × 120V |
-| Double pole | 2 | 1 | 2 | 1 × 240V |
-| Double — 2 × 120V | 2 | 2 | 2 | 2 × 120V |
-| Double — 2 × 240V | 2 | 2 | 4 | 2 × 240V |
-| Double — 240V + 2 × 120V | 2 | 3 | 4 | 1 × 240V between two 120V |
-| Double — 4 × 120V | 2 | 4 | 4 | 4 × 120V |
+| Double | 2 | 1 | 2 | 1 × 240V |
+| 2 × 120 | 2 | 2 | 2 | 2 × 120V |
+| 2 × 240 | 2 | 2 | 4 | 2 × 240V |
+| 1 × 240, 2 × 120 | 2 | 3 | 4 | 1 × 240V + 2 × 120V |
+| Quad | 2 | 4 | 4 | 4 × 120V |
 
 Nothing is wider than two slots. A two-slot breaker holds up to four poles, which is what makes the
-four-throw arrangements possible. The palette offers the four most common breakers; any breaker's
-throw arrangement can be changed after placement from the editor, and a one-slot breaker can be
+four-throw arrangements possible.
+
+The palette offers the four common breakers — Single, Tandem, Double and Quad. The three rarer
+arrangements live one tap further in, behind the palette's **More** button. Any breaker's throw
+arrangement can also be changed after placement from the editor, and a one-slot breaker can be
 widened in place when the slot below it is free.
 
 Switching arrangements never costs you typing: an arrangement with fewer throws hides the extra
 circuits rather than deleting them, and they come back with their labels intact if you switch to an
 arrangement that has them again.
+
+### How four-pole breakers are wired
+
+A four-pole breaker ties its **outer** poles (positions 1 and 4) together and nests the remaining
+throws between them. So `2 × 240` is an outer 240V pair with a second 240V pair inside it, and
+`1 × 240, 2 × 120` is an outer 240V pair with two independent 120V throws nested inside.
+
+The panel and the export both draw this: a tied throw appears at the top and bottom of the breaker
+with a handle tie joining them, and its label is repeated on the lower half. This is presentation
+only — the editor just lists a breaker's throws in order and never asks which pole a throw lands on.
 
 ## Panel geometry
 
@@ -94,6 +107,7 @@ compressed with `lz-string`, and written to the URL hash as `#p=…` — debounc
 `history.replaceState`, so it never spams browser history. A panel with 96 fully labelled circuits
 stays under 1.5 kB of URL.
 
-Nothing is written to local storage — the link is the save file. The format is versioned; links
-from earlier layouts are rejected rather than decoded into the wrong slots, since what a slot
-number means has changed between versions.
+Nothing is written to local storage — the link is the save file. The format is versioned. `v3`
+links are migrated on read (the `1 × 240, 2 × 120` arrangement reordered its throws, so its labels
+are remapped onto the right ones); anything older numbered slots differently and is rejected rather
+than decoded into the wrong slots.

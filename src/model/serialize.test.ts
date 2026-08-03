@@ -79,15 +79,46 @@ describe('URL state', () => {
     expect(stateFromHash('')).toBeNull();
   });
 
-  it('rejects older formats rather than mis-placing their breakers', () => {
-    // Earlier versions numbered slots differently, so their slot values mean
-    // something else here. Decoding one would silently misplace every breaker.
+  it('rejects formats older than v3 rather than mis-placing their breakers', () => {
+    // v1 and v2 numbered slots differently, so their slot values mean something
+    // else here. Decoding one would silently misplace every breaker.
     for (const version of [1, 2]) {
       const old = compressToEncodedURIComponent(
         JSON.stringify({ v: version, n: 'Old Panel', r: [], b: [{ c: 'd', s: 3, x: [] }] }),
       );
       expect(decodeState(old)).toBeNull();
     }
+  });
+
+  it('migrates a v3 link, moving its 240V label onto the reordered throw', () => {
+    // v3 ordered this arrangement's throws [120, 240, 120]; v4 puts 240 first.
+    const v3 = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: 3,
+        n: 'Old Panel',
+        r: ['Kitchen'],
+        b: [{ c: 'q3', s: 1, x: [[0, 'Disposal'], [0, 'Range'], [0, 'Lights']] }],
+      }),
+    );
+    const decoded = decodeState(v3)!;
+    // Range was the 240V circuit in v3 and must still be the 240V circuit now.
+    expect(decoded.breakers[0].circuits.map((c) => c.label)).toEqual([
+      'Range',
+      'Disposal',
+      'Lights',
+    ]);
+  });
+
+  it('leaves other arrangements untouched when migrating a v3 link', () => {
+    const v3 = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: 3,
+        n: 'Old Panel',
+        r: [],
+        b: [{ c: 't', s: 1, x: [[-1, 'One'], [-1, 'Two']] }],
+      }),
+    );
+    expect(decodeState(v3)!.breakers[0].circuits.map((c) => c.label)).toEqual(['One', 'Two']);
   });
 
   it('drops individually invalid breakers instead of failing the panel', () => {

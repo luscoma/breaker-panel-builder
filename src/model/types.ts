@@ -34,7 +34,7 @@ export interface Breaker {
 }
 
 export interface PanelState {
-  v: 3;
+  v: 4;
   name: string;
   /** Room list in insertion order; also fixes each room's colour. */
   rooms: string[];
@@ -52,25 +52,40 @@ const P1: ThrowDef = { poles: 1, voltage: 120 };
 const P2: ThrowDef = { poles: 2, voltage: 240 };
 
 export const CONFIGS: Record<BreakerConfig, ConfigDef> = {
-  single: { label: 'Single pole — 1 × 120V', short: 'Single', slots: 1, throws: [P1] },
+  single: { label: 'Single — 1 × 120V', short: 'Single', slots: 1, throws: [P1] },
   tandem: { label: 'Tandem — 2 × 120V', short: 'Tandem', slots: 1, throws: [P1, P1] },
-  double: { label: 'Double pole — 1 × 240V', short: 'Double', slots: 2, throws: [P2] },
-  'double-2x120': { label: 'Double — 2 × 120V', short: '2 × 120V', slots: 2, throws: [P1, P1] },
-  'double-2x240': { label: 'Double — 2 × 240V', short: '2 × 240V', slots: 2, throws: [P2, P2] },
+  double: { label: 'Double — 1 × 240V', short: 'Double', slots: 2, throws: [P2] },
+  'double-2x120': { label: '2 × 120 — two 120V throws', short: '2 × 120', slots: 2, throws: [P1, P1] },
+  'double-2x240': { label: '2 × 240 — two 240V throws', short: '2 × 240', slots: 2, throws: [P2, P2] },
   'double-240-2x120': {
-    label: 'Double — 1 × 240V + 2 × 120V',
-    short: '240V + 2 × 120V',
+    label: '1 × 240, 2 × 120',
+    short: '1 × 240, 2 × 120',
     slots: 2,
-    // The two 240V poles sit in the middle, with a 120V throw above and below,
-    // which is how a real four-throw double is built.
-    throws: [P1, P2, P1],
+    // The 240V throw is listed first so it reads in the same order as the name.
+    throws: [P2, P1, P1],
   },
   'double-4x120': {
-    label: 'Double — 4 × 120V',
-    short: '4 × 120V',
+    label: 'Quad — 4 × 120V',
+    short: 'Quad',
     slots: 2,
     throws: [P1, P1, P1, P1],
   },
+};
+
+/**
+ * Which throw sits on each pole position, top to bottom, for the arrangements
+ * whose throws are not simply stacked in order. A four-pole breaker ties its
+ * *outer* poles (1 and 4) together and nests the remaining throws between
+ * them, so a 240V throw can span two non-adjacent positions.
+ *
+ * This is a drawing concern only — the editor never needs to know which pole a
+ * throw lands on. Anything absent here is stacked in throw order.
+ */
+export const POLE_LAYOUT: Partial<Record<BreakerConfig, number[]>> = {
+  // outer pair = throw 0 (240V), inner pair = throw 1 (240V)
+  'double-2x240': [0, 1, 1, 0],
+  // outer pair = throw 0 (240V), inner poles = throws 1 and 2 (120V each)
+  'double-240-2x120': [0, 1, 2, 0],
 };
 
 export const ALL_CONFIGS: BreakerConfig[] = [
@@ -83,8 +98,15 @@ export const ALL_CONFIGS: BreakerConfig[] = [
   'double-4x120',
 ];
 
-/** The four the palette offers; every other arrangement is a config change. */
+/** The four the palette offers up front — the ones reached in a single tap. */
 export const PALETTE_CONFIGS: BreakerConfig[] = ['single', 'tandem', 'double', 'double-4x120'];
+
+/** The rarer arrangements, one tap further in behind the palette's More button. */
+export const OVERFLOW_CONFIGS: BreakerConfig[] = [
+  'double-2x120',
+  'double-2x240',
+  'double-240-2x120',
+];
 
 export const SLOT_COUNT = 48;
 /**

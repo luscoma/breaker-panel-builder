@@ -128,7 +128,7 @@ body {
 
 .palette__items {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr) auto;
   gap: 6px;
 }
 
@@ -159,6 +159,54 @@ body {
 }
 .palette__item--double-4x120 {
   border-left-color: #34d399;
+}
+.palette__item--double-2x120 {
+  border-left-color: #38bdf8;
+}
+.palette__item--double-2x240 {
+  border-left-color: #f59e0b;
+}
+.palette__item--double-240-2x120 {
+  border-left-color: #2dd4bf;
+}
+
+.palette__more-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.palette__more-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.palette__more-btn--selected {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.palette__overflow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
 }
 
 .palette__item--selected {
@@ -295,9 +343,8 @@ body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
-.breaker__circuits {
-  display: flex;
-  flex-direction: column;
+.breaker__poles {
+  display: grid;
   height: 100%;
 }
 
@@ -306,13 +353,30 @@ body {
   align-items: center;
   gap: 6px;
   min-height: 0;
-  flex-basis: 0;
   padding: 0 6px;
   overflow: hidden;
+  border-top: 1px dashed rgba(255, 255, 255, 0.14);
 }
 
-.circuit + .circuit {
-  border-top: 1px dashed rgba(255, 255, 255, 0.14);
+.circuit:first-child {
+  border-top: none;
+}
+
+/* A 240V throw tied across the outer poles: same circuit, drawn twice. */
+.circuit--tied .circuit__handle {
+  background: linear-gradient(180deg, #e2e8f0 0%, #94a3b8 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.circuit--continued {
+  opacity: 0.72;
+}
+
+.circuit--continued .circuit__text::after {
+  content: '⟂';
+  margin-left: 4px;
+  font-size: 9px;
+  color: var(--muted);
 }
 
 .breaker--left .circuit {
@@ -503,8 +567,28 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .circuit__volts {
+  .circuit__volts--120 {
     display: none;
+  }
+
+  .circuit__volts--240 {
+    font-size: 8.5px;
+    padding: 1px 3px;
+  }
+
+  .palette__items {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .palette__more-btn {
+    grid-column: span 2;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .palette__overflow {
+    grid-template-columns: 1fr;
   }
 }
 

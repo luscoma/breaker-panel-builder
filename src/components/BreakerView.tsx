@@ -1,5 +1,13 @@
 import { useDraggable } from '@dnd-kit/core';
-import { columnOf, isIndividuallyMonitored, rowOf, slotsFor, throwsFor } from '../model/panel';
+import {
+  columnOf,
+  isIndividuallyMonitored,
+  poleCount,
+  poleRuns,
+  rowOf,
+  slotsFor,
+  throwsFor,
+} from '../model/panel';
 import { Breaker, PanelState } from '../model/types';
 
 interface BreakerBodyProps {
@@ -8,22 +16,42 @@ interface BreakerBodyProps {
   compact?: boolean;
 }
 
-/** The visual face of a breaker, shared by the panel and the drag overlay. */
+/**
+ * The visual face of a breaker, shared by the panel and the drag overlay.
+ * Drawn as one block per pole run, so a 240V throw tied across the outer poles
+ * appears top and bottom with the nested throws drawn between them.
+ */
 export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
   const throws = throwsFor(breaker.config);
+  const runs = poleRuns(breaker.config);
+  const poles = poleCount(breaker.config);
   const monitored = isIndividuallyMonitored(breaker.config);
 
   return (
-    <div className="breaker__circuits">
-      {throws.map((t, i) => {
-        const circuit = breaker.circuits[i] ?? { room: '', label: '' };
+    <div
+      className="breaker__poles"
+      style={{ gridTemplateRows: `repeat(${poles}, minmax(0, 1fr))` }}
+    >
+      {runs.map((run, i) => {
+        const t = throws[run.throwIndex];
+        const circuit = breaker.circuits[run.throwIndex] ?? { room: '', label: '' };
         const room = circuit.room.trim();
         const label = circuit.label.trim();
         const color = room ? roomColor(room) : null;
+        const tied = runs.filter((r) => r.throwIndex === run.throwIndex).length > 1;
         const title = [room, label].filter(Boolean).join(' · ') || 'Unlabeled circuit';
 
+        const classes = ['circuit'];
+        if (tied) classes.push('circuit--tied');
+        if (!run.isFirst) classes.push('circuit--continued');
+
         return (
-          <div className="circuit" key={i} style={{ flexGrow: t.poles }} title={title}>
+          <div
+            className={classes.join(' ')}
+            key={i}
+            style={{ gridRow: `${run.start + 1} / span ${run.length}` }}
+            title={tied ? `${title} (240V, tied)` : title}
+          >
             <span className="circuit__handle" aria-hidden="true" />
             <span className="circuit__text">
               {room && (
@@ -35,7 +63,7 @@ export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
                 {label || (room ? '—' : 'unlabeled')}
               </span>
             </span>
-            {!compact && (
+            {!compact && run.isFirst && (
               <span
                 className={`circuit__volts circuit__volts--${t.voltage}`}
                 data-shared={monitored ? undefined : 'true'}

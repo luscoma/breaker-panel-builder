@@ -12,6 +12,8 @@ import {
   occupiedSlots,
   placeBreaker,
   poleCount,
+  poleLayout,
+  poleRuns,
   removeBreaker,
   removeRoom,
   renameRoom,
@@ -66,8 +68,8 @@ describe('breaker widths and throws', () => {
       { poles: 2, voltage: 240 },
       { poles: 2, voltage: 240 },
     ]);
-    // A quad's 240V pair sits between the two 120V throws.
-    expect(throwsFor('double-240-2x120').map((t) => t.voltage)).toEqual([120, 240, 120]);
+    // The 240V throw is listed first, matching the arrangement's name.
+    expect(throwsFor('double-240-2x120').map((t) => t.voltage)).toEqual([240, 120, 120]);
     expect(throwsFor('double-2x120')).toEqual([
       { poles: 1, voltage: 120 },
       { poles: 1, voltage: 120 },
@@ -99,6 +101,53 @@ describe('breaker widths and throws', () => {
     expect(isIndividuallyMonitored('double-2x240')).toBe(false); // 4 poles, 2 slots
     expect(isIndividuallyMonitored('double-240-2x120')).toBe(false);
     expect(isIndividuallyMonitored('double-4x120')).toBe(false);
+  });
+});
+
+describe('pole layout', () => {
+  it('assigns every pole position to exactly one throw', () => {
+    for (const config of ALL_CONFIGS) {
+      const layout = poleLayout(config);
+      expect(layout).toHaveLength(poleCount(config));
+      // Each throw must claim exactly as many poles as it declares.
+      throwsFor(config).forEach((t, index) => {
+        expect(layout.filter((p) => p === index)).toHaveLength(t.poles);
+      });
+    }
+  });
+
+  it('ties the 240V throw across the outer poles on a four-pole double', () => {
+    // Positions 1 and 4 are the tied 240V pair; 2 and 3 nest inside it.
+    expect(poleLayout('double-2x240')).toEqual([0, 1, 1, 0]);
+    expect(poleLayout('double-240-2x120')).toEqual([0, 1, 2, 0]);
+  });
+
+  it('stacks throws in order for the ordinary arrangements', () => {
+    expect(poleLayout('single')).toEqual([0]);
+    expect(poleLayout('tandem')).toEqual([0, 1]);
+    expect(poleLayout('double')).toEqual([0, 0]);
+    expect(poleLayout('double-2x120')).toEqual([0, 1]);
+    expect(poleLayout('double-4x120')).toEqual([0, 1, 2, 3]);
+  });
+
+  it('splits a tied throw into two drawable runs', () => {
+    const runs = poleRuns('double-240-2x120');
+    expect(runs).toEqual([
+      { throwIndex: 0, start: 0, length: 1, isFirst: true },
+      { throwIndex: 1, start: 1, length: 1, isFirst: true },
+      { throwIndex: 2, start: 2, length: 1, isFirst: true },
+      { throwIndex: 0, start: 3, length: 1, isFirst: false },
+    ]);
+  });
+
+  it('keeps a contiguous throw as a single run', () => {
+    expect(poleRuns('double')).toEqual([{ throwIndex: 0, start: 0, length: 2, isFirst: true }]);
+    // The inner 240V pair of a 2 x 240 is contiguous; the outer one is not.
+    expect(poleRuns('double-2x240')).toEqual([
+      { throwIndex: 0, start: 0, length: 1, isFirst: true },
+      { throwIndex: 1, start: 1, length: 2, isFirst: true },
+      { throwIndex: 0, start: 3, length: 1, isFirst: false },
+    ]);
   });
 });
 
