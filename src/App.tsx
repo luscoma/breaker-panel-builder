@@ -311,12 +311,6 @@ export default function App() {
           <span>
             <strong>{stats.usedSlots}</strong>/{SLOT_COUNT} slots
           </span>
-          <span className="stats__legend">
-            <span className="spine__num spine__num--shared" aria-hidden="true">
-              7
-            </span>
-            marked slots share a monitoring channel
-          </span>
         </div>
 
         <Palette

@@ -75,9 +75,10 @@ Packing more poles in buys circuits and costs resolution, which is the tradeoff 
 make visible.
 
 Because metering is per *slot*, that is where the panel marks it: **the slot number itself turns
-amber and gains an underline** when its circuits share a channel. Tap a marked number for an
-explanation, or read the legend beside the running totals. The export marks the same slot numbers,
-and additionally gives each directory entry a filled dot (own channel) or a hollow one (shared).
+amber and gains an underline** when its circuits share a channel. Tap a marked number (or hover it
+on desktop) for an explanation. The export marks the same slot numbers, and additionally gives each
+directory entry a filled dot (own channel) or a hollow one (shared) with a legend, since a printed
+card has neither hover nor tap.
 
 ## Sharing and export
 
