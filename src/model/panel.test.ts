@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addRoom,
+  commitCircuitRoom,
   canPlace,
   circuitCount,
   columnOf,
@@ -14,10 +15,12 @@ import {
   removeBreaker,
   removeRoom,
   renameRoom,
+  roomColor,
   roomUsage,
   rowOf,
   setCircuitLabel,
   setCircuitRoom,
+  visibleCircuits,
   setConfig,
   slotsFor,
   summarize,
@@ -182,16 +185,30 @@ describe('mutations', () => {
     expect(moveBreaker(state, id, 47)).toBe(state); // would run off the bottom
   });
 
-  it('keeps circuit labels when the throw arrangement changes', () => {
+  it('never loses a label when the throw arrangement shrinks and grows back', () => {
     let state = placeBreaker(emptyPanel(), 'double-4x120', 1);
     const id = state.breakers[0].id;
     for (let i = 0; i < 4; i++) state = setCircuitLabel(state, id, i, `L${i + 1}`);
 
+    // Only two circuits are exposed...
     state = setConfig(state, id, 'double-2x240');
-    expect(state.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2']);
+    expect(visibleCircuits(state.breakers[0]).map((c) => c.label)).toEqual(['L1', 'L2']);
 
+    // ...and the hidden ones come back intact rather than as blanks.
     state = setConfig(state, id, 'double-4x120');
-    expect(state.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2', '', '']);
+    expect(state.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2', 'L3', 'L4']);
+  });
+
+  it('ignores hidden circuits when counting room usage and suggesting labels', () => {
+    let state = placeBreaker(emptyPanel(), 'double-4x120', 1);
+    const id = state.breakers[0].id;
+    state = commitCircuitRoom(state, id, 3, 'Attic');
+    state = setCircuitLabel(state, id, 3, 'Hidden fan');
+    expect(roomUsage(state, 'Attic')).toBe(1);
+
+    state = setConfig(state, id, 'double'); // exposes only circuit 1
+    expect(roomUsage(state, 'Attic')).toBe(0);
+    expect(knownLabels(state)).not.toContain('Hidden fan');
   });
 
   it('allows a width change only when the slot below is free', () => {
@@ -208,17 +225,41 @@ describe('mutations', () => {
 });
 
 describe('rooms', () => {
-  it('registers a room the first time it is typed on a circuit', () => {
+  it('does not register a room while it is still being typed', () => {
+    // Typing "Family" one keystroke at a time must not file six partial rooms.
     let state = placeBreaker(emptyPanel(), 'tandem', 1);
     const id = state.breakers[0].id;
-    state = setCircuitRoom(state, id, 0, 'Family');
+    for (const partial of ['F', 'Fa', 'Fam', 'Fami', 'Famil', 'Family']) {
+      state = setCircuitRoom(state, id, 0, partial);
+    }
+    expect(state.rooms).toEqual([]);
+    expect(state.breakers[0].circuits[0].room).toBe('Family');
+
+    state = commitCircuitRoom(state, id, 0, 'Family');
+    expect(state.rooms).toEqual(['Family']);
+  });
+
+  it('registers a room once it is committed, and reuses it', () => {
+    let state = placeBreaker(emptyPanel(), 'tandem', 1);
+    const id = state.breakers[0].id;
+    state = commitCircuitRoom(state, id, 0, 'Family');
     expect(state.rooms).toEqual(['Family']);
     expect(state.breakers[0].circuits[0].room).toBe('Family');
 
     // Reusing it on another circuit must not duplicate the room.
-    state = setCircuitRoom(state, id, 1, 'Family');
+    state = commitCircuitRoom(state, id, 1, 'Family');
     expect(state.rooms).toEqual(['Family']);
     expect(roomUsage(state, 'Family')).toBe(2);
+  });
+
+  it('stores the trimmed name so the room list and the circuit agree', () => {
+    let state = placeBreaker(emptyPanel(), 'single', 1);
+    const id = state.breakers[0].id;
+    state = commitCircuitRoom(state, id, 0, '  Kitchen  ');
+    expect(state.rooms).toEqual(['Kitchen']);
+    expect(state.breakers[0].circuits[0].room).toBe('Kitchen');
+    expect(roomUsage(state, 'Kitchen')).toBe(1);
+    expect(roomColor(state, state.breakers[0].circuits[0].room)).not.toBeNull();
   });
 
   it('supports pre-adding a room before any circuit uses it', () => {
@@ -233,8 +274,8 @@ describe('rooms', () => {
   it('renames a room across every circuit using it', () => {
     let state = placeBreaker(emptyPanel(), 'tandem', 1);
     const id = state.breakers[0].id;
-    state = setCircuitRoom(state, id, 0, 'Family');
-    state = setCircuitRoom(state, id, 1, 'Family');
+    state = commitCircuitRoom(state, id, 0, 'Family');
+    state = commitCircuitRoom(state, id, 1, 'Family');
     state = renameRoom(state, 'Family', 'Living');
     expect(state.rooms).toEqual(['Living']);
     expect(state.breakers[0].circuits.every((c) => c.room === 'Living')).toBe(true);
@@ -243,7 +284,7 @@ describe('rooms', () => {
   it('clears a removed room from its circuits', () => {
     let state = placeBreaker(emptyPanel(), 'tandem', 1);
     const id = state.breakers[0].id;
-    state = setCircuitRoom(state, id, 0, 'Family');
+    state = commitCircuitRoom(state, id, 0, 'Family');
     state = removeRoom(state, 'Family');
     expect(state.rooms).toEqual([]);
     expect(state.breakers[0].circuits[0].room).toBe('');

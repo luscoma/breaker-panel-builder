@@ -4,6 +4,7 @@ import {
   CONFIGS,
   CircuitLabel,
   DEFAULT_LABELS,
+  MAX_CIRCUITS,
   PanelState,
   ROOM_COLORS_DARK,
   ROOM_COLORS_LIGHT,
@@ -104,6 +105,23 @@ function emptyCircuits(config: BreakerConfig): CircuitLabel[] {
   return Array.from({ length: circuitCount(config) }, () => ({ room: '', label: '' }));
 }
 
+/**
+ * Grow a circuit list to at least `count`, keeping any entries past it. Those
+ * extras are the labels of throws the current arrangement doesn't expose; they
+ * come back if the user switches to an arrangement that has them again.
+ */
+export function padCircuits(circuits: CircuitLabel[], count: number): CircuitLabel[] {
+  const kept = circuits.slice(0, MAX_CIRCUITS);
+  const padded = [...kept];
+  while (padded.length < count) padded.push({ room: '', label: '' });
+  return padded;
+}
+
+/** The circuits a breaker's current arrangement actually exposes. */
+export function visibleCircuits(breaker: Breaker): CircuitLabel[] {
+  return breaker.circuits.slice(0, circuitCount(breaker.config));
+}
+
 export function placeBreaker(state: PanelState, config: BreakerConfig, slot: number): PanelState {
   if (!canPlace(state, config, slot)) return state;
   const breaker: Breaker = { id: newId(), config, slot, circuits: emptyCircuits(config) };
@@ -122,19 +140,18 @@ export function removeBreaker(state: PanelState, id: string): PanelState {
 
 /**
  * Change a breaker's throw arrangement. Widening a one-slot breaker is allowed
- * when the extra slot is free; existing circuit labels are kept where the new
- * arrangement still has a throw for them. Returns state unchanged if it cannot fit.
+ * when the slot below is free. Returns state unchanged if it cannot fit.
+ *
+ * Circuit labels are never discarded: an arrangement with fewer throws hides
+ * the extra circuits rather than deleting them, so cycling through
+ * arrangements to compare them does not cost the user their typing.
  */
 export function setConfig(state: PanelState, id: string, config: BreakerConfig): PanelState {
   const breaker = state.breakers.find((b) => b.id === id);
   if (!breaker || breaker.config === config) return state;
   if (!canPlace(state, config, breaker.slot, id)) return state;
 
-  const count = circuitCount(config);
-  const circuits = Array.from(
-    { length: count },
-    (_, i) => breaker.circuits[i] ?? { room: '', label: '' },
-  );
+  const circuits = padCircuits(breaker.circuits, circuitCount(config));
   return {
     ...state,
     breakers: state.breakers.map((b) => (b.id === id ? { ...b, config, circuits } : b)),
@@ -167,14 +184,32 @@ export function setCircuitLabel(
   return patchCircuit(state, id, index, { label });
 }
 
-/** Set a circuit's room, registering the room if it is a new one. */
+/**
+ * Set a circuit's room as typed, without registering it. Callers use this for
+ * live keystrokes — registering here would add one room per character typed.
+ */
 export function setCircuitRoom(
   state: PanelState,
   id: string,
   index: number,
   room: string,
 ): PanelState {
-  return patchCircuit(addRoom(state, room), id, index, { room });
+  return patchCircuit(state, id, index, { room });
+}
+
+/**
+ * Commit a circuit's room once the user is done typing it: the trimmed name is
+ * both stored on the circuit and registered, so the room list and the circuit
+ * can never disagree about whitespace.
+ */
+export function commitCircuitRoom(
+  state: PanelState,
+  id: string,
+  index: number,
+  room: string,
+): PanelState {
+  const name = room.trim();
+  return patchCircuit(addRoom(state, name), id, index, { room: name });
 }
 
 export function addRoom(state: PanelState, room: string): PanelState {
@@ -217,7 +252,7 @@ export function setName(state: PanelState, name: string): PanelState {
 export function roomUsage(state: PanelState, room: string): number {
   let count = 0;
   for (const b of state.breakers) {
-    for (const c of b.circuits) if (c.room === room) count += 1;
+    for (const c of visibleCircuits(b)) if (c.room === room) count += 1;
   }
   return count;
 }
@@ -233,7 +268,7 @@ export function roomColor(state: PanelState, room: string, light = false): strin
 export function knownLabels(state: PanelState): string[] {
   const used = new Set<string>();
   for (const b of state.breakers) {
-    for (const c of b.circuits) {
+    for (const c of visibleCircuits(b)) {
       const label = c.label.trim();
       if (label) used.add(label);
     }

@@ -1,4 +1,4 @@
-import { occupiedSlots, throwsFor } from '../model/panel';
+import { isIndividuallyMonitored, occupiedSlots, throwsFor } from '../model/panel';
 import { ALL_CONFIGS, Breaker, BreakerConfig, CONFIGS } from '../model/types';
 
 interface BreakerEditorProps {
@@ -9,6 +9,7 @@ interface BreakerEditorProps {
   canUseConfig: (config: BreakerConfig) => boolean;
   onConfigChange: (config: BreakerConfig) => void;
   onRoomChange: (circuit: number, room: string) => void;
+  onRoomCommit: (circuit: number, room: string) => void;
   onLabelChange: (circuit: number, label: string) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -22,13 +23,16 @@ export function BreakerEditor({
   canUseConfig,
   onConfigChange,
   onRoomChange,
+  onRoomCommit,
   onLabelChange,
   onRemove,
   onClose,
 }: BreakerEditorProps) {
   const throws = throwsFor(breaker.config);
   const slots = occupiedSlots(breaker);
-  const monitored = throws.length === 1;
+  // Must match the model's rule (one pole per slot), not a throw count —
+  // a 2 x 120V double has two throws and still keeps both channels.
+  const monitored = isIndividuallyMonitored(breaker.config);
 
   const oneSlot = ALL_CONFIGS.filter((c) => CONFIGS[c].slots === 1);
   const twoSlot = ALL_CONFIGS.filter((c) => CONFIGS[c].slots === 2);
@@ -38,6 +42,11 @@ export function BreakerEditor({
       <datalist id="labels-list">
         {labels.map((label) => (
           <option key={label} value={label} />
+        ))}
+      </datalist>
+      <datalist id="rooms-list">
+        {rooms.map((room) => (
+          <option key={room} value={room} />
         ))}
       </datalist>
 
@@ -105,7 +114,7 @@ export function BreakerEditor({
                         type="button"
                         className={`chip${active ? ' chip--active' : ''}`}
                         style={color ? { borderColor: color, color: active ? undefined : color } : undefined}
-                        onClick={() => onRoomChange(i, active ? '' : room)}
+                        onClick={() => onRoomCommit(i, active ? '' : room)}
                       >
                         {room}
                       </button>
@@ -120,8 +129,15 @@ export function BreakerEditor({
                   type="text"
                   value={circuit.room}
                   placeholder="Room"
+                  list="rooms-list"
                   aria-label={`Circuit ${i + 1} room`}
                   onChange={(e) => onRoomChange(i, e.target.value)}
+                  // Registering per keystroke would file one room per character,
+                  // so the room only joins the list once the field is done.
+                  onBlur={(e) => onRoomCommit(i, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                  }}
                   autoComplete="off"
                 />
                 <input

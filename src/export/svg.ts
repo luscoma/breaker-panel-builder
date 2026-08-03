@@ -39,16 +39,26 @@ const COLORS = {
   v120: '#1d4ed8',
 };
 
+/** Half of a surrogate pair with no partner — invalid in a URI-encoded SVG. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 function esc(text: string): string {
   return text
+    .replace(LONE_SURROGATE, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Truncate by code point, not by UTF-16 unit. Slicing mid-surrogate would leave
+ * a lone surrogate, which makes encodeURIComponent throw when the SVG is turned
+ * into a data URL — one emoji in a label would break the whole PNG export.
+ */
 function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  const points = Array.from(text);
+  return points.length <= max ? text : `${points.slice(0, max - 1).join('')}…`;
 }
 
 /** Total pole positions on a breaker — the unit its throw heights divide. */

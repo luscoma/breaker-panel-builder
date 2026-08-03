@@ -13,6 +13,14 @@ function fileStem(state: PanelState): string {
   return base.replace(/^-|-$/g, '') || 'panel';
 }
 
+/**
+ * Revoking synchronously after click() races the download in some browsers,
+ * so let the click settle first.
+ */
+function revokeSoon(url: string): void {
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 function triggerDownload(url: string, filename: string): void {
   const link = document.createElement('a');
   link.href = url;
@@ -26,7 +34,7 @@ export function downloadSvg(state: PanelState): void {
   const blob = new Blob([renderPanelSvg(state)], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
   triggerDownload(url, `${fileStem(state)}.svg`);
-  URL.revokeObjectURL(url);
+  revokeSoon(url);
 }
 
 export async function renderPanelPngBlob(state: PanelState): Promise<Blob> {
@@ -62,7 +70,7 @@ export async function downloadPng(state: PanelState): Promise<void> {
   const blob = await renderPanelPngBlob(state);
   const url = URL.createObjectURL(blob);
   triggerDownload(url, `${fileStem(state)}.png`);
-  URL.revokeObjectURL(url);
+  revokeSoon(url);
 }
 
 /**
@@ -89,6 +97,6 @@ export async function copyPngToClipboard(state: PanelState): Promise<'copied' | 
 
   const url = URL.createObjectURL(blob);
   triggerDownload(url, `${fileStem(state)}.png`);
-  URL.revokeObjectURL(url);
+  revokeSoon(url);
   return 'downloaded';
 }

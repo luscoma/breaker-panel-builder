@@ -19,6 +19,7 @@ import { copyPngToClipboard, downloadSvg } from './export/png';
 import {
   addRoom,
   canPlace,
+  commitCircuitRoom,
   emptyPanel,
   knownLabels,
   moveBreaker,
@@ -43,6 +44,7 @@ type Action =
   | { type: 'remove'; id: string }
   | { type: 'config'; id: string; config: BreakerConfig }
   | { type: 'room'; id: string; circuit: number; room: string }
+  | { type: 'commitRoom'; id: string; circuit: number; room: string }
   | { type: 'label'; id: string; circuit: number; label: string }
   | { type: 'addRoom'; room: string }
   | { type: 'renameRoom'; from: string; to: string }
@@ -63,6 +65,8 @@ function reducer(state: PanelState, action: Action): PanelState {
       return setConfig(state, action.id, action.config);
     case 'room':
       return setCircuitRoom(state, action.id, action.circuit, action.room);
+    case 'commitRoom':
+      return commitCircuitRoom(state, action.id, action.circuit, action.room);
     case 'label':
       return setCircuitLabel(state, action.id, action.circuit, action.label);
     case 'addRoom':
@@ -118,7 +122,13 @@ export default function App() {
     const onHashChange = () => {
       if (window.location.hash === lastHashRef.current) return;
       const loaded = stateFromHash(window.location.hash);
-      if (loaded) dispatch({ type: 'load', state: loaded });
+      if (loaded) {
+        dispatch({ type: 'load', state: loaded });
+      } else {
+        // Nothing dispatched means the sync effect won't run, so put the
+        // panel's real link back rather than leaving a broken one on screen.
+        window.history.replaceState(null, '', lastHashRef.current || window.location.pathname);
+      }
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -170,6 +180,11 @@ export default function App() {
       }
       dispatch({ type: 'place', config: drag.config, slot });
     } else {
+      const breaker = state.breakers.find((b) => b.id === drag.id);
+      if (breaker && !canPlace(state, breaker.config, slot, breaker.id)) {
+        showToast('That breaker does not fit there');
+        return;
+      }
       dispatch({ type: 'move', id: drag.id, slot });
     }
   };
@@ -300,6 +315,9 @@ export default function App() {
             }}
             onRoomChange={(circuit, room) =>
               dispatch({ type: 'room', id: selected.id, circuit, room })
+            }
+            onRoomCommit={(circuit, room) =>
+              dispatch({ type: 'commitRoom', id: selected.id, circuit, room })
             }
             onLabelChange={(circuit, label) =>
               dispatch({ type: 'label', id: selected.id, circuit, label })

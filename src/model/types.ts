@@ -138,3 +138,6 @@ export const ROOM_COLORS_LIGHT = [
   '#0e7490',
   '#4d7c0f',
 ];
+
+/** No breaker exposes more than four throws, so nothing needs more circuits. */
+export const MAX_CIRCUITS = 4;

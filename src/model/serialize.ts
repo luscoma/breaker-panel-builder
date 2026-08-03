@@ -1,6 +1,9 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { canPlace, circuitCount, emptyPanel } from './panel';
-import { BreakerConfig, CircuitLabel, PanelState } from './types';
+import { BreakerConfig, CircuitLabel, MAX_CIRCUITS, PanelState, SLOT_COUNT } from './types';
+
+/** A panel of 48 slots cannot meaningfully reference more rooms than circuits. */
+const MAX_ROOMS = 96;
 
 // Short codes keep shared links small; the wire format is deliberately
 // separate from PanelState so internal ids never leak into URLs.
@@ -35,11 +38,22 @@ interface WireState {
 }
 
 export function encodeState(state: PanelState): string {
-  const roomIndex = new Map(state.rooms.map((room, i) => [room, i]));
+  // Any room a circuit refers to gets written out, even if it somehow never
+  // made it into the room list — otherwise sharing would silently drop it.
+  const rooms = [...state.rooms];
+  const roomIndex = new Map(rooms.map((room, i) => [room, i]));
+  for (const breaker of state.breakers) {
+    for (const circuit of breaker.circuits) {
+      if (circuit.room && !roomIndex.has(circuit.room)) {
+        roomIndex.set(circuit.room, rooms.push(circuit.room) - 1);
+      }
+    }
+  }
+
   const wire: WireState = {
     v: 3,
     n: state.name,
-    r: state.rooms,
+    r: rooms,
     b: state.breakers.map((b) => ({
       c: CODE_BY_CONFIG[b.config],
       s: b.slot,
@@ -67,25 +81,34 @@ export function decodeState(encoded: string): PanelState | null {
   const w = wire as Partial<WireState>;
   if (w.v !== 3 || !Array.isArray(w.b)) return null;
 
-  const rooms = Array.isArray(w.r) ? w.r.filter((r): r is string => typeof r === 'string') : [];
+  // Positions must be preserved when reading room indices, so a junk entry
+  // shifts nothing; only the resulting room list drops the blanks.
+  const slots = Array.isArray(w.r)
+    ? w.r.slice(0, MAX_ROOMS).map((r) => (typeof r === 'string' ? r.trim() : ''))
+    : [];
   let state: PanelState = {
     ...emptyPanel(),
     name: typeof w.n === 'string' ? w.n : emptyPanel().name,
-    rooms,
+    rooms: [...new Set(slots.filter(Boolean))],
   };
 
   for (const raw of w.b) {
+    // The panel physically cannot hold more than one breaker per slot, so this
+    // also bounds the work a hostile payload can make us do.
+    if (state.breakers.length >= SLOT_COUNT) break;
     if (typeof raw !== 'object' || raw === null) continue;
     const { c, s, x } = raw as Partial<WireBreaker>;
     const config = typeof c === 'string' ? CONFIG_BY_CODE[c] : undefined;
     if (!config || typeof s !== 'number') continue;
     if (!canPlace(state, config, s)) continue;
 
-    const circuits = Array.from({ length: circuitCount(config) }, (_, i): CircuitLabel => {
-      const entry = Array.isArray(x) ? x[i] : undefined;
+    const entries = Array.isArray(x) ? x : [];
+    const length = Math.max(circuitCount(config), Math.min(entries.length, MAX_CIRCUITS));
+    const circuits = Array.from({ length }, (_, i): CircuitLabel => {
+      const entry = entries[i];
       const index = Array.isArray(entry) && typeof entry[0] === 'number' ? entry[0] : -1;
       const label = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
-      return { room: rooms[index] ?? '', label };
+      return { room: slots[index] ?? '', label };
     });
 
     state = {

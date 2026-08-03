@@ -2,6 +2,7 @@ import { compressToEncodedURIComponent } from 'lz-string';
 import { describe, expect, it } from 'vitest';
 import {
   addRoom,
+  commitCircuitRoom,
   emptyPanel,
   placeBreaker,
   setCircuitLabel,
@@ -13,14 +14,14 @@ import { decodeState, encodeState, stateFromHash, stateToHash } from './serializ
 function sampleState() {
   let state = setName(emptyPanel(), 'House Panel');
   state = placeBreaker(state, 'single', 1);
-  state = setCircuitRoom(state, state.breakers[0].id, 0, 'Family');
+  state = commitCircuitRoom(state, state.breakers[0].id, 0, 'Family');
   state = setCircuitLabel(state, state.breakers[0].id, 0, 'Lights');
 
   state = placeBreaker(state, 'double-240-2x120', 2);
   const quad = state.breakers[1].id;
-  state = setCircuitRoom(state, quad, 0, 'Family');
+  state = commitCircuitRoom(state, quad, 0, 'Family');
   state = setCircuitLabel(state, quad, 0, 'Plugs');
-  state = setCircuitRoom(state, quad, 1, 'Kitchen');
+  state = commitCircuitRoom(state, quad, 1, 'Kitchen');
   state = setCircuitLabel(state, quad, 1, 'Range');
 
   state = placeBreaker(state, 'tandem', 7);
@@ -63,7 +64,7 @@ describe('URL state', () => {
       state = placeBreaker(state, 'tandem', slot);
       const id = state.breakers[slot - 1].id;
       for (const i of [0, 1]) {
-        state = setCircuitRoom(state, id, i, rooms[slot % rooms.length]);
+        state = commitCircuitRoom(state, id, i, rooms[slot % rooms.length]);
         state = setCircuitLabel(state, id, i, i === 0 ? 'Lights' : 'Plugs');
       }
     }
@@ -100,6 +101,45 @@ describe('URL state', () => {
       ],
     });
     expect(decodeState(encoded)!.breakers).toHaveLength(state.breakers.length);
+  });
+
+  it('preserves a room a circuit uses even if it is missing from the room list', () => {
+    // Guards the encode path against silently erasing rooms on a desync.
+    let state = placeBreaker(emptyPanel(), 'single', 1);
+    state = setCircuitRoom(state, state.breakers[0].id, 0, 'Orphan');
+    expect(state.rooms).toEqual([]);
+    const decoded = decodeState(encodeState(state))!;
+    expect(decoded.breakers[0].circuits[0].room).toBe('Orphan');
+    expect(decoded.rooms).toContain('Orphan');
+  });
+
+  it('keeps room indices aligned when the room array holds junk', () => {
+    const payload = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: 3,
+        n: 'P',
+        r: [123, 'Kitchen'],
+        b: [{ c: 's', s: 1, x: [[1, 'Range']] }],
+      }),
+    );
+    const decoded = decodeState(payload)!;
+    expect(decoded.breakers[0].circuits[0]).toEqual({ room: 'Kitchen', label: 'Range' });
+  });
+
+  it('carries hidden circuit labels across a share link', () => {
+    let state = placeBreaker(emptyPanel(), 'double-4x120', 1);
+    const id = state.breakers[0].id;
+    for (let i = 0; i < 4; i++) state = setCircuitLabel(state, id, i, `L${i + 1}`);
+    state = { ...state, breakers: state.breakers.map((b) => ({ ...b, config: 'double' as const })) };
+    const decoded = decodeState(encodeState(state))!;
+    expect(decoded.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2', 'L3', 'L4']);
+  });
+
+  it('refuses to decode more breakers than the panel has slots', () => {
+    const b = Array.from({ length: 5000 }, () => ({ c: 's', s: 1, x: [] }));
+    const payload = compressToEncodedURIComponent(JSON.stringify({ v: 3, n: 'P', r: [], b }));
+    const decoded = decodeState(payload)!;
+    expect(decoded.breakers.length).toBeLessThanOrEqual(48);
   });
 
   it('ignores an unknown breaker configuration', () => {

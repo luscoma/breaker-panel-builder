@@ -27,6 +27,10 @@ four-throw arrangements possible. The palette offers the four most common breake
 throw arrangement can be changed after placement from the editor, and a one-slot breaker can be
 widened in place when the slot below it is free.
 
+Switching arrangements never costs you typing: an arrangement with fewer throws hides the extra
+circuits rather than deleting them, and they come back with their labels intact if you switch to an
+arrangement that has them again.
+
 ## Panel geometry
 
 Slots alternate across the panel face: **odd numbers down the left column, even numbers down the

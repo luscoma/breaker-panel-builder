@@ -20,12 +20,22 @@ export function RoomsSheet({
   onClose,
 }: RoomsSheetProps) {
   const [draft, setDraft] = useState('');
+  // Rename edits are held here per room. Clearing the entry on blur makes the
+  // field fall back to the real name, so a rejected rename (empty, or a name
+  // already taken) visibly snaps back instead of showing a value state never took.
+  const [renames, setRenames] = useState<Record<string, string>>({});
 
   const add = () => {
     const name = draft.trim();
     if (!name) return;
     onAdd(name);
     setDraft('');
+  };
+
+  const commitRename = (room: string) => {
+    const next = renames[room];
+    setRenames(({ [room]: _dropped, ...rest }) => rest);
+    if (next !== undefined) onRename(room, next);
   };
 
   return (
@@ -76,9 +86,10 @@ export function RoomsSheet({
               <input
                 className="field__input"
                 type="text"
-                defaultValue={room}
+                value={renames[room] ?? room}
                 aria-label={`Rename ${room}`}
-                onBlur={(e) => onRename(room, e.target.value)}
+                onChange={(e) => setRenames((r) => ({ ...r, [room]: e.target.value }))}
+                onBlur={() => commitRename(room)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur();
                 }}
