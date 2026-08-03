@@ -38,7 +38,6 @@ export function Slot({ slot, column, row, occupied, valid, onTap }: SlotProps) {
       }}
       role="button"
       tabIndex={actionable ? 0 : -1}
-      aria-disabled={valid === false || undefined}
       aria-label={`Panel slot ${slot}`}
     />
   );

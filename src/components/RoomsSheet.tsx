@@ -101,6 +101,10 @@ export function RoomsSheet({
               <button
                 type="button"
                 className="btn btn--danger"
+                // Without this the rename field blurs first, commits a rename,
+                // re-keys the row and unmounts it — so the delete click never
+                // lands and the room is silently renamed instead of removed.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onRemove(room)}
                 aria-label={`Remove ${room}`}
               >

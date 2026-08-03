@@ -9,7 +9,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { CSSProperties, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { BreakerBody } from './components/BreakerView';
 import { BreakerEditor } from './components/BreakerEditor';
 import { Palette } from './components/Palette';
@@ -33,6 +33,7 @@ import {
   setCircuitRoom,
   setConfig,
   setName,
+  slotsFor,
   summarize,
 } from './model/panel';
 import { stateFromHash, stateToHash } from './model/serialize';
@@ -134,10 +135,16 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  const toastTimer = useRef<number | undefined>(undefined);
   const showToast = useCallback((message: string) => {
+    // One timer, cleared on each call: two identical messages in a row would
+    // otherwise have the first one's timer dismiss the second early.
+    window.clearTimeout(toastTimer.current);
     setToast(message);
-    window.setTimeout(() => setToast((current) => (current === message ? null : current)), 2400);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2400);
   }, []);
+
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   const colorForRoom = useCallback((room: string) => roomColor(state, room), [state]);
   const labels = useMemo(() => knownLabels(state), [state]);
@@ -199,7 +206,8 @@ export default function App() {
   };
 
   const onCopyLink = async () => {
-    const url = `${window.location.origin}${window.location.pathname}${stateToHash(state)}`;
+    const { origin, pathname, search } = window.location;
+    const url = `${origin}${pathname}${search}${stateToHash(state)}`;
     try {
       await navigator.clipboard.writeText(url);
       showToast('Share link copied');
@@ -347,7 +355,10 @@ export default function App() {
 
       <DragOverlay dropAnimation={null}>
         {activeDrag?.kind === 'palette' && (
-          <div className={`breaker breaker--${activeDrag.config} breaker--overlay`}>
+          <div
+            className={`breaker breaker--${activeDrag.config} breaker--overlay`}
+            style={{ '--overlay-slots': slotsFor(activeDrag.config) } as CSSProperties}
+          >
             <BreakerBody
               breaker={{ id: 'preview', config: activeDrag.config, slot: 1, circuits: [] }}
               roomColor={colorForRoom}
@@ -356,7 +367,10 @@ export default function App() {
           </div>
         )}
         {activeBreaker && (
-          <div className={`breaker breaker--${activeBreaker.config} breaker--overlay`}>
+          <div
+            className={`breaker breaker--${activeBreaker.config} breaker--overlay`}
+            style={{ '--overlay-slots': slotsFor(activeBreaker.config) } as CSSProperties}
+          >
             <BreakerBody breaker={activeBreaker} roomColor={colorForRoom} compact />
           </div>
         )}

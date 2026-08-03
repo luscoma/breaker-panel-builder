@@ -1,9 +1,20 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { canPlace, circuitCount, emptyPanel } from './panel';
-import { BreakerConfig, CircuitLabel, MAX_CIRCUITS, PanelState, SLOT_COUNT } from './types';
+import {
+  BreakerConfig,
+  CircuitLabel,
+  MAX_CIRCUITS,
+  MAX_ROOMS,
+  PanelState,
+  SLOT_COUNT,
+} from './types';
 
-/** A panel of 48 slots cannot meaningfully reference more rooms than circuits. */
-const MAX_ROOMS = 96;
+/**
+ * A payload cannot describe more than one breaker per slot, so anything past a
+ * generous multiple of that is junk. Bounds the work a crafted link can cause
+ * even when every entry is invalid and nothing is ever placed.
+ */
+const MAX_WIRE_BREAKERS = SLOT_COUNT * 4;
 
 // Short codes keep shared links small; the wire format is deliberately
 // separate from PanelState so internal ids never leak into URLs.
@@ -64,7 +75,7 @@ export function encodeState(state: PanelState): string {
   const wire: WireState = {
     v: 4,
     n: state.name,
-    r: rooms,
+    r: rooms.slice(0, MAX_ROOMS),
     b: state.breakers.map((b) => ({
       c: CODE_BY_CONFIG[b.config],
       s: b.slot,
@@ -107,9 +118,8 @@ export function decodeState(encoded: string): PanelState | null {
     rooms: [...new Set(slots.filter(Boolean))],
   };
 
-  for (const raw of w.b) {
-    // The panel physically cannot hold more than one breaker per slot, so this
-    // also bounds the work a hostile payload can make us do.
+  for (const raw of w.b.slice(0, MAX_WIRE_BREAKERS)) {
+    // The panel physically cannot hold more than one breaker per slot.
     if (state.breakers.length >= SLOT_COUNT) break;
     if (typeof raw !== 'object' || raw === null) continue;
     const { c, s, x } = raw as Partial<WireBreaker>;

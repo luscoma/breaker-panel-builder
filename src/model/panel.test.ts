@@ -28,7 +28,7 @@ import {
   summarize,
   throwsFor,
 } from './panel';
-import { ALL_CONFIGS } from './types';
+import { ALL_CONFIGS, MAX_ROOMS } from './types';
 
 describe('breaker widths and throws', () => {
   it('has only one-slot and two-slot breakers', () => {
@@ -318,6 +318,13 @@ describe('rooms', () => {
     state = addRoom(state, '  Garage  '); // trimmed duplicate
     expect(state.rooms).toEqual(['Garage']);
     expect(addRoom(state, '   ')).toBe(state);
+  });
+
+  it('caps the room list at what a share link can carry', () => {
+    let state = emptyPanel();
+    for (let i = 0; i < MAX_ROOMS + 40; i++) state = addRoom(state, `Room ${i}`);
+    expect(state.rooms).toHaveLength(MAX_ROOMS);
+    expect(state.rooms[MAX_ROOMS - 1]).toBe(`Room ${MAX_ROOMS - 1}`);
   });
 
   it('renames a room across every circuit using it', () => {

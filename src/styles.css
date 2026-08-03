@@ -297,6 +297,7 @@ body {
 /* ---------- breakers ---------- */
 
 .breaker {
+  position: relative;
   z-index: 2;
   border-radius: 6px;
   border: 1px solid #3a4150;
@@ -328,6 +329,27 @@ body {
   border-left: 3px solid #34d399;
 }
 
+/* Shared monitoring channel: a cue that survives the badges being hidden. */
+.breaker--shared::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--shared);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.breaker--left.breaker--shared::after {
+  left: 5px;
+}
+
+.breaker--right.breaker--shared::after {
+  right: 5px;
+}
+
 .breaker--selected {
   box-shadow: 0 0 0 2px var(--accent);
 }
@@ -338,7 +360,8 @@ body {
 
 .breaker--overlay {
   width: 160px;
-  height: var(--row-h);
+  /* Match the real footprint so the preview is not half-height for a double. */
+  height: calc(var(--row-h) * var(--overlay-slots, 1));
   cursor: grabbing;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
@@ -362,7 +385,7 @@ body {
   border-top: none;
 }
 
-/* A 240V throw tied across the outer poles: same circuit, drawn twice. */
+/* A 2-pole 240V throw is a common trip, whether or not its poles are adjacent. */
 .circuit--tied .circuit__handle {
   background: linear-gradient(180deg, #e2e8f0 0%, #94a3b8 100%);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
@@ -372,7 +395,7 @@ body {
   opacity: 0.72;
 }
 
-.circuit--continued .circuit__text::after {
+.circuit--split.circuit--continued .circuit__text::after {
   content: '⟂';
   margin-left: 4px;
   font-size: 9px;

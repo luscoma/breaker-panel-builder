@@ -5,6 +5,7 @@ import {
   CircuitLabel,
   DEFAULT_LABELS,
   MAX_CIRCUITS,
+  MAX_ROOMS,
   POLE_LAYOUT,
   PanelState,
   ROOM_COLORS_DARK,
@@ -51,13 +52,21 @@ export function isIndividuallyMonitored(config: BreakerConfig): boolean {
  * stacking the throws in order for arrangements with no explicit layout.
  */
 export function poleLayout(config: BreakerConfig): number[] {
-  const explicit = POLE_LAYOUT[config];
-  if (explicit) return explicit;
-  const layout: number[] = [];
-  throwsFor(config).forEach((t, index) => {
-    for (let pole = 0; pole < t.poles; pole++) layout.push(index);
+  const throws = throwsFor(config);
+  const stacked: number[] = [];
+  throws.forEach((t, index) => {
+    for (let pole = 0; pole < t.poles; pole++) stacked.push(index);
   });
-  return layout;
+
+  const explicit = POLE_LAYOUT[config];
+  if (!explicit) return stacked;
+
+  // A layout that disagrees with the throws it is describing would hand the
+  // renderers an index with no throw behind it, so fall back rather than trust it.
+  const consistent =
+    explicit.length === stacked.length &&
+    throws.every((t, index) => explicit.filter((p) => p === index).length === t.poles);
+  return consistent ? explicit : stacked;
 }
 
 /** A block of adjacent pole positions belonging to one throw. */
@@ -260,6 +269,8 @@ export function commitCircuitRoom(
 export function addRoom(state: PanelState, room: string): PanelState {
   const name = room.trim();
   if (!name || state.rooms.includes(name)) return state;
+  // Capped so the room list can never grow past what a share link carries.
+  if (state.rooms.length >= MAX_ROOMS) return state;
   return { ...state, rooms: [...state.rooms, name] };
 }
 

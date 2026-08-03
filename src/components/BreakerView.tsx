@@ -38,11 +38,17 @@ export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
         const room = circuit.room.trim();
         const label = circuit.label.trim();
         const color = room ? roomColor(room) : null;
-        const tied = runs.filter((r) => r.throwIndex === run.throwIndex).length > 1;
-        const title = [room, label].filter(Boolean).join(' · ') || 'Unlabeled circuit';
+        // Two separate ideas: a 2-pole throw is a common trip and gets the tied
+        // handle, whether or not its poles happen to be adjacent; a throw drawn
+        // in more than one run also needs its lower half marked as a repeat.
+        const commonTrip = t.poles === 2;
+        const split = runs.filter((r) => r.throwIndex === run.throwIndex).length > 1;
+        const base = [room, label].filter(Boolean).join(' · ') || 'Unlabeled circuit';
+        const title = commonTrip ? `${base} (${t.voltage}V, tied)` : base;
 
         const classes = ['circuit'];
-        if (tied) classes.push('circuit--tied');
+        if (commonTrip) classes.push('circuit--tied');
+        if (split) classes.push('circuit--split');
         if (!run.isFirst) classes.push('circuit--continued');
 
         return (
@@ -50,7 +56,7 @@ export function BreakerBody({ breaker, roomColor, compact }: BreakerBodyProps) {
             className={classes.join(' ')}
             key={i}
             style={{ gridRow: `${run.start + 1} / span ${run.length}` }}
-            title={tied ? `${title} (240V, tied)` : title}
+            title={title}
           >
             <span className="circuit__handle" aria-hidden="true" />
             <span className="circuit__text">

@@ -163,3 +163,11 @@ export const ROOM_COLORS_LIGHT = [
 
 /** No breaker exposes more than four throws, so nothing needs more circuits. */
 export const MAX_CIRCUITS = 4;
+
+/**
+ * Every slot could hold a breaker carrying MAX_CIRCUITS circuits, each naming a
+ * different room, so this is the most a panel can legitimately reference. The
+ * encoder and decoder share the cap so a shared link can never carry rooms the
+ * far side would throw away.
+ */
+export const MAX_ROOMS = SLOT_COUNT * MAX_CIRCUITS;

@@ -114,6 +114,9 @@ export function BreakerEditor({
                         type="button"
                         className={`chip${active ? ' chip--active' : ''}`}
                         style={color ? { borderColor: color, color: active ? undefined : color } : undefined}
+                        // Keeps the room field from blurring first, which would
+                        // register the half-typed text as a room of its own.
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => onRoomCommit(i, active ? '' : room)}
                       >
                         {room}

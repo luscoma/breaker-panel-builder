@@ -10,6 +10,7 @@ import {
   setName,
 } from './panel';
 import { decodeState, encodeState, stateFromHash, stateToHash } from './serialize';
+import { MAX_ROOMS } from './types';
 
 function sampleState() {
   let state = setName(emptyPanel(), 'House Panel');
@@ -164,6 +165,20 @@ describe('URL state', () => {
     state = { ...state, breakers: state.breakers.map((b) => ({ ...b, config: 'double' as const })) };
     const decoded = decodeState(encodeState(state))!;
     expect(decoded.breakers[0].circuits.map((c) => c.label)).toEqual(['L1', 'L2', 'L3', 'L4']);
+  });
+
+  it('carries a full room list across without dropping any', () => {
+    // The encoder must never write more rooms than the decoder will accept,
+    // or a shared link silently blanks the circuits using the lost ones.
+    let state = emptyPanel();
+    for (let i = 0; i < MAX_ROOMS; i++) state = addRoom(state, `Room ${i}`);
+    state = placeBreaker(state, 'single', 1);
+    const last = state.rooms[state.rooms.length - 1];
+    state = commitCircuitRoom(state, state.breakers[0].id, 0, last);
+
+    const decoded = decodeState(encodeState(state))!;
+    expect(decoded.rooms).toHaveLength(MAX_ROOMS);
+    expect(decoded.breakers[0].circuits[0].room).toBe(last);
   });
 
   it('refuses to decode more breakers than the panel has slots', () => {

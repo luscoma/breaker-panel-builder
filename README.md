@@ -40,9 +40,13 @@ A four-pole breaker ties its **outer** poles (positions 1 and 4) together and ne
 throws between them. So `2 × 240` is an outer 240V pair with a second 240V pair inside it, and
 `1 × 240, 2 × 120` is an outer 240V pair with two independent 120V throws nested inside.
 
-The panel and the export both draw this: a tied throw appears at the top and bottom of the breaker
-with a handle tie joining them, and its label is repeated on the lower half. This is presentation
-only — the editor just lists a breaker's throws in order and never asks which pole a throw lands on.
+Both views draw this, slightly differently. In the panel a tied throw appears at the top and bottom
+of the breaker with its label repeated on the lower half, so you can read any row and know what it
+feeds. The export draws the same two blocks joined by a handle tie, but prints the directory entry
+once — repeating it would just be noise on a printed card.
+
+This is presentation only. The editor lists a breaker's throws in order and never asks which pole a
+throw lands on.
 
 ## Panel geometry
 

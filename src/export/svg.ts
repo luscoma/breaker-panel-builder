@@ -53,14 +53,58 @@ function esc(text: string): string {
 }
 
 /**
- * Truncate by code point, not by UTF-16 unit. Slicing mid-surrogate would leave
- * a lone surrogate, which makes encodeURIComponent throw when the SVG is turned
- * into a data URL — one emoji in a label would break the whole PNG export.
+ * Approximate advance width of one code point. CJK, Hangul, Kana and emoji are
+ * full-width; Latin averages about half an em in this font stack. Rough is
+ * fine — it only has to keep text inside its column.
  */
-function truncate(text: string, max: number): string {
-  const points = Array.from(text);
-  return points.length <= max ? text : `${points.slice(0, max - 1).join('')}…`;
+function charWidth(point: string, fontSize: number): number {
+  const code = point.codePointAt(0) ?? 0;
+  const wide =
+    (code >= 0x1100 && code <= 0x115f) ||
+    (code >= 0x2e80 && code <= 0xa4cf) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    code >= 0x1f300;
+  return wide ? fontSize : fontSize * 0.53;
 }
+
+function textWidth(text: string, fontSize: number): number {
+  let width = 0;
+  for (const point of text) width += charWidth(point, fontSize);
+  return width;
+}
+
+/**
+ * Truncate to a pixel budget, stepping by code point so a cut never lands
+ * inside a surrogate pair — a lone surrogate makes encodeURIComponent throw
+ * when the SVG becomes a data URL, which would break the whole PNG export.
+ * Counting code points alone is not enough: 24 CJK characters are twice as
+ * wide as 24 Latin ones and would run off the page.
+ */
+function truncate(text: string, maxWidth: number, fontSize = 11.5): string {
+  const points = Array.from(text);
+  const ellipsis = charWidth('…', fontSize);
+  let width = 0;
+  for (let i = 0; i < points.length; i++) {
+    const next = charWidth(points[i], fontSize);
+    if (width + next > maxWidth) {
+      while (i > 0 && width + ellipsis > maxWidth) {
+        i -= 1;
+        width -= charWidth(points[i], fontSize);
+      }
+      return `${points.slice(0, i).join('')}…`;
+    }
+    width += next;
+  }
+  return text;
+}
+
+/** Usable width of a directory column, less its padding and monitoring dot. */
+const DIR_W = LABEL_W - 26;
+const LABEL_FS = 11.5;
 
 /** Total pole positions on a breaker — the unit its throw heights divide. */
 function poleUnits(breaker: Breaker): number {
@@ -128,20 +172,27 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
 
     let content: string;
     if (room && label) {
+      // The room is bold, so it measures a little wider than its plain width.
+      const roomText = truncate(room, DIR_W * 0.45, LABEL_FS * 1.06);
+      const sep = textWidth(' · ', LABEL_FS);
+      const used = textWidth(roomText, LABEL_FS * 1.06) + sep;
       content =
-        `<tspan fill="${color}" font-weight="600">${esc(truncate(room, 16))}</tspan>` +
+        `<tspan fill="${color}" font-weight="600">${esc(roomText)}</tspan>` +
         `<tspan fill="${COLORS.muted}"> · </tspan>` +
-        `<tspan fill="${COLORS.ink}">${esc(truncate(label, 24))}</tspan>`;
+        `<tspan fill="${COLORS.ink}">${esc(truncate(label, DIR_W - used))}</tspan>`;
     } else if (room) {
-      content = `<tspan fill="${color}" font-weight="600">${esc(truncate(room, 16))}</tspan>`;
+      content = `<tspan fill="${color}" font-weight="600">${esc(truncate(room, DIR_W, LABEL_FS * 1.06))}</tspan>`;
     } else if (label) {
-      content = `<tspan fill="${COLORS.ink}">${esc(truncate(label, 32))}</tspan>`;
+      content = `<tspan fill="${COLORS.ink}">${esc(truncate(label, DIR_W))}</tspan>`;
     } else {
       content = `<tspan fill="${COLORS.muted}" font-style="italic">unlabeled</tspan>`;
     }
 
+    // The clip is a hard backstop: however the width estimate lands, no
+    // directory entry can spill into the panel face or off the page.
     parts.push(
-      `<text x="${labelX}" y="${midY + 3.5}" text-anchor="${anchor}" font-size="11.5">${content}</text>`,
+      `<text x="${labelX}" y="${midY + 3.5}" text-anchor="${anchor}" font-size="${LABEL_FS}" ` +
+        `clip-path="url(#dir-${left ? 'left' : 'right'})">${content}</text>`,
     );
 
     // Monitoring marker: filled = its own CT channel, hollow = shares a slot.
@@ -161,9 +212,9 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
     const last = mine[mine.length - 1];
     const topY = innerY + first.start * poleH + (poleH * first.length) / 2;
     const bottomY = innerY + last.start * poleH + (poleH * last.length) / 2;
-    const tieX = left ? handleX + handleW + 2 : handleX - 2;
+    const tieX = left ? handleX + handleW + 1 : handleX - 1;
     parts.push(
-      `<path d="M ${tieX} ${topY} H ${tieX + (left ? 3 : -3)} V ${bottomY} H ${tieX}" ` +
+      `<path d="M ${tieX} ${topY} H ${tieX + (left ? 2 : -2)} V ${bottomY} H ${tieX}" ` +
         `fill="none" stroke="${COLORS.handle}" stroke-width="1.4"/>`,
     );
   }
@@ -178,11 +229,19 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
 export function renderPanelSvg(state: PanelState): string {
   const parts: string[] = [];
 
+  parts.push(
+    `<defs>` +
+      `<clipPath id="dir-left"><rect x="0" y="0" width="${PAD + LABEL_W - 2}" height="${HEIGHT}"/></clipPath>` +
+      `<clipPath id="dir-right">` +
+      `<rect x="${RIGHT_BODY_X + BODY_W + 2}" y="0" width="${WIDTH - RIGHT_BODY_X - BODY_W - 2}" height="${HEIGHT}"/>` +
+      `</clipPath>` +
+      `</defs>`,
+  );
   parts.push(`<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="${COLORS.bg}"/>`);
 
   parts.push(
     `<text x="${PAD}" y="34" font-size="20" font-weight="700" fill="${COLORS.ink}">` +
-      `${esc(truncate(state.name || 'Panel', 48))}</text>`,
+      `${esc(truncate(state.name || 'Panel', WIDTH - PAD * 2, 20))}</text>`,
   );
   parts.push(
     `<text x="${PAD}" y="54" font-size="12" fill="${COLORS.muted}">` +
