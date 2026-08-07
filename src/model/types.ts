@@ -33,8 +33,15 @@ export interface Breaker {
   circuits: CircuitLabel[];
 }
 
+/**
+ * What a slot number and a breaker's throw order mean. Bump it whenever either
+ * changes, or a saved link or file will quietly describe a different panel.
+ * Shared by the URL codec and the JSON file format.
+ */
+export const PANEL_VERSION = 5;
+
 export interface PanelState {
-  v: 5;
+  v: typeof PANEL_VERSION;
   name: string;
   /** Room list in insertion order; also fixes each room's colour. */
   rooms: string[];

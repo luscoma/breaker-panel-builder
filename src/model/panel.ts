@@ -6,6 +6,7 @@ import {
   DEFAULT_LABELS,
   MAX_CIRCUITS,
   MAX_ROOMS,
+  PANEL_VERSION,
   PanelState,
   ROOM_COLORS_DARK,
   ROOM_COLORS_LIGHT,
@@ -14,7 +15,7 @@ import {
 } from './types';
 
 export function emptyPanel(): PanelState {
-  return { v: 5, name: 'Main Panel', rooms: [], breakers: [] };
+  return { v: PANEL_VERSION, name: 'Main Panel', rooms: [], breakers: [] };
 }
 
 export function slotsFor(config: BreakerConfig): 1 | 2 {

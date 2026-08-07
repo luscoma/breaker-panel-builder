@@ -729,3 +729,57 @@ body {
 .breaker--double-2x120 {
   border-left: 3px solid #38bdf8;
 }
+
+/* ---------- file menu ---------- */
+
+.filemenu {
+  position: relative;
+}
+
+.filemenu__items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.filemenu__item {
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.filemenu__item:hover,
+.filemenu__item:focus-visible {
+  background: var(--surface);
+  outline: none;
+}
+
+/* Off-screen but still focusable by its own control, which clicks it. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

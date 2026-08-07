@@ -5,6 +5,7 @@ import {
   CircuitLabel,
   MAX_CIRCUITS,
   MAX_ROOMS,
+  PANEL_VERSION,
   PanelState,
   SLOT_COUNT,
 } from './types';
@@ -45,7 +46,7 @@ interface WireBreaker {
 }
 
 interface WireState {
-  v: 5;
+  v: typeof PANEL_VERSION;
   n: string;
   r: string[];
   b: WireBreaker[];
@@ -65,7 +66,7 @@ export function encodeState(state: PanelState): string {
   }
 
   const wire: WireState = {
-    v: 5,
+    v: PANEL_VERSION,
     n: state.name,
     r: rooms.slice(0, MAX_ROOMS),
     b: state.breakers.map((b) => ({
@@ -96,7 +97,7 @@ export function decodeState(encoded: string): PanelState | null {
   // Only the current format is readable. Earlier ones numbered slots and
   // ordered throws differently, so decoding one would quietly produce a
   // different panel than the link described.
-  if (w.v !== 5 || !Array.isArray(w.b)) return null;
+  if (w.v !== PANEL_VERSION || !Array.isArray(w.b)) return null;
 
   // Positions must be preserved when reading room indices, so a junk entry
   // shifts nothing; only the resulting room list drops the blanks.

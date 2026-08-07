@@ -1,4 +1,5 @@
 import { PanelState } from '../model/types';
+import { downloadBlob, fileStem } from './download';
 import { renderPanelSvg, SVG_SIZE } from './svg';
 
 const SCALE = 2;
@@ -8,33 +9,9 @@ function svgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function fileStem(state: PanelState): string {
-  const base = (state.name || 'panel').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  return base.replace(/^-|-$/g, '') || 'panel';
-}
-
-/**
- * Revoking synchronously after click() races the download in some browsers,
- * so let the click settle first.
- */
-function revokeSoon(url: string): void {
-  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
-function triggerDownload(url: string, filename: string): void {
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
 export function downloadSvg(state: PanelState): void {
   const blob = new Blob([renderPanelSvg(state)], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, `${fileStem(state)}.svg`);
-  revokeSoon(url);
+  downloadBlob(blob, `${fileStem(state.name)}.svg`);
 }
 
 export async function renderPanelPngBlob(state: PanelState): Promise<Blob> {
@@ -67,10 +44,7 @@ export async function renderPanelPngBlob(state: PanelState): Promise<Blob> {
 }
 
 export async function downloadPng(state: PanelState): Promise<void> {
-  const blob = await renderPanelPngBlob(state);
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, `${fileStem(state)}.png`);
-  revokeSoon(url);
+  downloadBlob(await renderPanelPngBlob(state), `${fileStem(state.name)}.png`);
 }
 
 /**
@@ -95,8 +69,6 @@ export async function copyPngToClipboard(state: PanelState): Promise<'copied' | 
     }
   }
 
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, `${fileStem(state)}.png`);
-  revokeSoon(url);
+  downloadBlob(blob, `${fileStem(state.name)}.png`);
   return 'downloaded';
 }

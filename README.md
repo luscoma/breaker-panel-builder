@@ -82,9 +82,49 @@ card has neither hover nor tap.
 
 ## Sharing and export
 
-- **Copy link** — the panel is compressed into the URL fragment and kept current as you edit.
+**Copy link** is its own button: the panel is compressed into the URL fragment and kept current as
+you edit, so the address bar is always shareable.
+
+Everything else lives under **File**:
+
 - **Copy PNG** — copied to the clipboard where the browser allows it, downloaded otherwise.
-- **SVG** — downloads a vector of the same directory-card rendering.
+- **Download SVG** — a vector of the same directory-card rendering.
+- **Export JSON** — the panel as a readable, hand-editable file (below).
+- **Import JSON** — read one back, replacing the current panel.
+
+### The JSON file
+
+Keyed by slot, one breaker per line, with a two-slot breaker appearing once under its topmost slot
+(so the `240+2x120` at 3 also occupies 5). Empty fields are left out, and a breaker with nothing
+labelled drops its `circuits` list entirely:
+
+```json
+{
+  "version": 5,
+  "name": "Lusco House",
+  "rooms": ["Family", "Kitchen", "Garage"],
+  "breakers": {
+    "1": { "breaker": "single", "circuits": [{ "room": "Family", "label": "Lights" }] },
+    "2": { "breaker": "tandem", "circuits": [{ "room": "Family", "label": "Plugs" }, { "room": "Kitchen", "label": "Disposal" }] },
+    "3": { "breaker": "240+2x120" },
+    "6": { "breaker": "quad" }
+  }
+}
+```
+
+Breakers go by the names the app shows them under: `single`, `tandem`, `double`, `2x120`, `2x240`,
+`240+2x120`, `quad`. A circuit list has one entry per throw, in the order the breaker face draws
+them, and shorter lists are padded.
+
+Because this file is meant to be edited by hand, importing is forgiving but talkative: a file with
+the wrong `version`, bad JSON, or no `breakers` section is refused outright and changes nothing,
+while individual entries that cannot be placed — an unknown breaker name, a slot off the panel, a
+two-slot breaker at 47, two breakers overlapping — are skipped with a count reported in a toast
+rather than vanishing quietly. `rooms` is optional; a room named only on a circuit is picked up
+anyway.
+
+Exporting writes the circuits the arrangement currently shows. If you shrink a breaker's throw
+count the app keeps the hidden labels so you can switch back, but they do not reach the file.
 
 ## Development
 

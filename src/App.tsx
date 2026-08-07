@@ -12,10 +12,13 @@ import {
 import { CSSProperties, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { BreakerBody } from './components/BreakerView';
 import { BreakerEditor } from './components/BreakerEditor';
+import { FileMenu } from './components/FileMenu';
 import { Palette } from './components/Palette';
 import { PanelGrid } from './components/PanelGrid';
 import { RoomsSheet } from './components/RoomsSheet';
 import { copyPngToClipboard, downloadSvg } from './export/png';
+import { downloadPanelJson } from './export/json';
+import { parsePanelFile } from './model/panelFile';
 import {
   addRoom,
   canPlace,
@@ -247,6 +250,41 @@ export default function App() {
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Reset first so picking the same file twice in a row still fires onChange.
+    event.target.value = '';
+    if (!file) return;
+
+    const result = parsePanelFile(await file.text());
+    if (!result.ok) {
+      showToast(result.reason);
+      return;
+    }
+    if (
+      state.breakers.length > 0 &&
+      !window.confirm('Replace the current panel with the imported one?')
+    ) {
+      return;
+    }
+
+    // The imported breakers are unrelated to whatever was selected, so drop the
+    // selection rather than let the editor rebind to a stranger.
+    setSelectedId(null);
+    setRoomsOpen(false);
+    dispatch({ type: 'load', state: result.state });
+
+    const placed = result.state.breakers.length;
+    const count = `${placed} breaker${placed === 1 ? '' : 's'}`;
+    showToast(
+      result.dropped > 0
+        ? `Imported ${count}, skipped ${result.dropped} that did not fit`
+        : `Imported ${count}`,
+    );
+  };
+
   const onClear = () => {
     if (state.breakers.length === 0) return;
     if (window.confirm('Remove every breaker from this panel?')) {
@@ -286,12 +324,12 @@ export default function App() {
             <button type="button" className="btn" onClick={onCopyLink}>
               Copy link
             </button>
-            <button type="button" className="btn" onClick={onCopyImage}>
-              Copy PNG
-            </button>
-            <button type="button" className="btn" onClick={() => downloadSvg(state)}>
-              SVG
-            </button>
+            <FileMenu
+              onCopyPng={onCopyImage}
+              onDownloadSvg={() => downloadSvg(state)}
+              onExportJson={() => downloadPanelJson(state)}
+              onImportJson={() => fileInputRef.current?.click()}
+            />
             <button type="button" className="btn btn--ghost" onClick={onClear}>
               Clear
             </button>
@@ -374,6 +412,16 @@ export default function App() {
             onClose={() => setRoomsOpen(false)}
           />
         )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="visually-hidden"
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={onImportFile}
+        />
 
         {toast && <div className="toast">{toast}</div>}
       </div>
