@@ -11,6 +11,9 @@ interface FileMenuProps {
  * The export and import actions, collapsed behind one button. Four separate
  * buttons plus Rooms, Copy link and Clear wrapped the toolbar onto three rows
  * on a phone; these are all occasional actions, so one extra tap is cheap.
+ *
+ * A disclosure, not a `role="menu"` widget: that role promises arrow-key
+ * navigation and typeahead, and tabbing through four buttons is fine here.
  */
 export function FileMenu({
   onCopyPng,
@@ -42,46 +45,25 @@ export function FileMenu({
     action();
   };
 
+  const items: [string, () => void][] = [
+    ['Copy PNG', onCopyPng],
+    ['Download SVG', onDownloadSvg],
+    ['Export JSON', onExportJson],
+    ['Import JSON…', onImportJson],
+  ];
+
   return (
     <div className="filemenu" ref={wrapRef}>
-      <button
-        type="button"
-        className="btn"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((o) => !o)}
-      >
+      <button type="button" className="btn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         File {open ? '▲' : '▾'}
       </button>
       {open && (
-        <div className="filemenu__items" role="menu">
-          <button type="button" className="filemenu__item" role="menuitem" onClick={run(onCopyPng)}>
-            Copy PNG
-          </button>
-          <button
-            type="button"
-            className="filemenu__item"
-            role="menuitem"
-            onClick={run(onDownloadSvg)}
-          >
-            Download SVG
-          </button>
-          <button
-            type="button"
-            className="filemenu__item"
-            role="menuitem"
-            onClick={run(onExportJson)}
-          >
-            Export JSON
-          </button>
-          <button
-            type="button"
-            className="filemenu__item"
-            role="menuitem"
-            onClick={run(onImportJson)}
-          >
-            Import JSON…
-          </button>
+        <div className="filemenu__items" role="group" aria-label="Export and import">
+          {items.map(([label, action]) => (
+            <button key={label} type="button" className="filemenu__item" onClick={run(action)}>
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </div>

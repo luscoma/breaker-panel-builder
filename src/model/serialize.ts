@@ -32,7 +32,12 @@ const CODE_BY_CONFIG: Record<BreakerConfig, string> = {
   'double-4x120': 'q4',
 };
 
-const CONFIG_BY_CODE: Record<string, BreakerConfig> = Object.fromEntries(
+/**
+ * A Map, not an object: a crafted link with a code of "constructor" would index
+ * the prototype, return a function, pass the truthiness check and then throw —
+ * and this runs during the first render, so it would white-screen the app.
+ */
+const CONFIG_BY_CODE = new Map<string, BreakerConfig>(
   Object.entries(CODE_BY_CONFIG).map(([config, code]) => [code, config as BreakerConfig]),
 );
 
@@ -115,7 +120,7 @@ export function decodeState(encoded: string): PanelState | null {
     if (state.breakers.length >= SLOT_COUNT) break;
     if (typeof raw !== 'object' || raw === null) continue;
     const { c, s, x } = raw as Partial<WireBreaker>;
-    const config = typeof c === 'string' ? CONFIG_BY_CODE[c] : undefined;
+    const config = typeof c === 'string' ? CONFIG_BY_CODE.get(c) : undefined;
     if (!config || typeof s !== 'number') continue;
     if (!canPlace(state, config, s)) continue;
 

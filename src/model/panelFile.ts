@@ -7,14 +7,11 @@ import {
   visibleCircuits,
 } from './panel';
 import {
-  ALL_CONFIGS,
   BreakerConfig,
   CircuitLabel,
-  CONFIGS,
   MAX_ROOMS,
   PANEL_VERSION,
   PanelState,
-  SLOT_COUNT,
 } from './types';
 
 /**
@@ -32,7 +29,12 @@ export const FILE_NAME_BY_CONFIG: Record<BreakerConfig, string> = {
   'double-4x120': 'quad',
 };
 
-const CONFIG_BY_FILE_NAME: Record<string, BreakerConfig> = Object.fromEntries(
+/**
+ * A Map, not an object: indexing a plain object with a name like "constructor"
+ * or "__proto__" walks the prototype chain and answers with a function, which
+ * sails past a truthiness check and then explodes deeper in.
+ */
+const CONFIG_BY_FILE_NAME = new Map<string, BreakerConfig>(
   Object.entries(FILE_NAME_BY_CONFIG).map(([config, name]) => [name, config as BreakerConfig]),
 );
 
@@ -113,6 +115,10 @@ export function serializePanelFile(state: PanelState): string {
   ];
 
   const slots = Object.keys(file.breakers);
+  if (slots.length === 0) {
+    lines[lines.length - 1] = '  "breakers": {}';
+    return `${lines.join('\n')}\n}\n`;
+  }
   slots.forEach((slot, i) => {
     const entry = file.breakers[slot];
     const comma = i === slots.length - 1 ? '' : ',';
@@ -150,7 +156,9 @@ function readCircuits(raw: unknown, config: BreakerConfig): CircuitLabel[] {
     if (typeof entry !== 'object' || entry === null) return { room: '', label: '' };
     const { room, label } = entry as Partial<FileCircuit>;
     return {
-      room: typeof room === 'string' ? room.trim() : '',
+      room: typeof room === 'string' ? room.trim().slice(0, MAX_LABEL_LENGTH) : '',
+      // Not trimmed: the app lets a label keep its spacing, and trimming here
+      // would make a round trip through the file quietly change it.
       label: typeof label === 'string' ? label.slice(0, MAX_LABEL_LENGTH) : '',
     };
   });
@@ -177,7 +185,7 @@ export function fromPanelFile(raw: unknown): ImportResult {
 
   let state: PanelState = {
     ...emptyPanel(),
-    name: typeof file.name === 'string' && file.name.trim() ? file.name : emptyPanel().name,
+    name: typeof file.name === 'string' ? file.name : emptyPanel().name,
   };
   if (Array.isArray(file.rooms)) {
     for (const room of file.rooms.slice(0, MAX_ROOMS)) {
@@ -185,20 +193,25 @@ export function fromPanelFile(raw: unknown): ImportResult {
     }
   }
 
-  let dropped = 0;
-  const entries = Object.entries(file.breakers).slice(0, MAX_FILE_ENTRIES);
+  const allEntries = Object.entries(file.breakers);
+  // Anything past the cap is skipped too, and has to be counted or the toast
+  // under-reports and breakers vanish with no accounting at all.
+  let dropped = Math.max(0, allEntries.length - MAX_FILE_ENTRIES);
+  const entries = allEntries.slice(0, MAX_FILE_ENTRIES);
   // Ascending slot order so a collision blames the later breaker, which is the
   // one a reader would expect to lose.
   entries.sort((a, b) => Number(a[0]) - Number(b[0]));
 
   for (const [key, value] of entries) {
-    const slot = Number(key);
+    // Plain decimal only. Number() would take "0x3", "1e1", " 2" and "1.0",
+    // which are different JSON keys that would land on the same slot.
+    const slot = /^(?:0|[1-9]\d*)$/.test(key) ? Number(key) : NaN;
     if (typeof value !== 'object' || value === null) {
       dropped += 1;
       continue;
     }
     const name = (value as Partial<FileBreaker>).breaker;
-    const config = typeof name === 'string' ? CONFIG_BY_FILE_NAME[name.trim()] : undefined;
+    const config = typeof name === 'string' ? CONFIG_BY_FILE_NAME.get(name.trim()) : undefined;
     if (!config || !Number.isInteger(slot) || !canPlace(state, config, slot)) {
       dropped += 1;
       continue;
@@ -227,12 +240,3 @@ export function parsePanelFile(text: string): ImportResult {
   }
   return fromPanelFile(raw);
 }
-
-/** Every arrangement must be nameable in a file, or exporting would lose it. */
-export function everyConfigHasFileName(): boolean {
-  return ALL_CONFIGS.every((config) => Boolean(FILE_NAME_BY_CONFIG[config]));
-}
-
-export const FILE_SLOT_LIMIT = SLOT_COUNT;
-export const FILE_CONFIG_NAMES = Object.keys(CONFIG_BY_FILE_NAME);
-export const FILE_CONFIG_LABELS = ALL_CONFIGS.map((c) => `${FILE_NAME_BY_CONFIG[c]} — ${CONFIGS[c].label}`);

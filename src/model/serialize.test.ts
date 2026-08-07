@@ -197,6 +197,19 @@ describe('URL state', () => {
     expect(decodeState(payload)!.breakers[0].circuits[0].label.length).toBeLessThanOrEqual(200);
   });
 
+  it('survives a breaker code that collides with Object.prototype', () => {
+    // decodeState runs during the first render, so throwing here would white
+    // -screen the app from nothing more than a crafted link.
+    for (const code of ['constructor', '__proto__', 'toString', 'valueOf']) {
+      const payload = compressToEncodedURIComponent(
+        JSON.stringify({ v: 5, n: 'P', r: [], b: [{ c: code, s: 1, x: [] }] }),
+      );
+      expect(() => decodeState(payload)).not.toThrow();
+      expect(decodeState(payload)!.breakers).toHaveLength(0);
+    }
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('ignores an unknown breaker configuration', () => {
     const state = sampleState();
     const encoded = encodeState({

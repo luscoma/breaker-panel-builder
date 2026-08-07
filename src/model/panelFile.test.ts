@@ -249,6 +249,90 @@ describe('importing a file', () => {
     expect(result.state.breakers[0].circuits[0]).toEqual({ room: '', label: '' });
   });
 
+  it('refuses a breaker name that collides with Object.prototype', () => {
+    // Indexing a plain object with these returns a function, which would sail
+    // past a truthiness check and then throw deeper in with no toast at all.
+    for (const name of [
+      'constructor',
+      '__proto__',
+      'toString',
+      'valueOf',
+      'hasOwnProperty',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+    ]) {
+      const result = fromPanelFile({
+        version: PANEL_VERSION,
+        breakers: { '1': { breaker: name } },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.breakers).toHaveLength(0);
+      expect(result.dropped).toBe(1);
+    }
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('keeps a blank panel name, the way a shared link does', () => {
+    for (const name of ['', '   ']) {
+      const state = setName(emptyPanel(), name);
+      const result = parsePanelFile(serializePanelFile(state));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.name).toBe(name);
+    }
+  });
+
+  it('accepts only plain decimal slot keys', () => {
+    // Number() would take all of these, and "1" / "1.0" / "01" are distinct
+    // JSON keys that would collapse onto one slot and look like a collision.
+    for (const key of ['0x3', '0b11', '1e1', ' 2', '4 ', '\n5', '+3', '01', '1.0', '1.5', '-1']) {
+      const result = fromPanelFile({
+        version: PANEL_VERSION,
+        breakers: { [key]: { breaker: 'single' } },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.breakers, `key ${JSON.stringify(key)}`).toHaveLength(0);
+    }
+    // Plain decimals still work.
+    const good = fromPanelFile({ version: PANEL_VERSION, breakers: { '7': { breaker: 'single' } } });
+    expect(good.ok && good.state.breakers[0].slot).toBe(7);
+  });
+
+  it('counts entries dropped for exceeding the file cap', () => {
+    const breakers: Record<string, unknown> = {};
+    for (let i = 1; i <= 600; i++) breakers[String(i)] = { breaker: 'single' };
+    const result = fromPanelFile({ version: PANEL_VERSION, breakers });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Every entry is accounted for: placed + dropped == what the file held.
+    expect(result.state.breakers.length + result.dropped).toBe(600);
+  });
+
+  it('writes an empty panel tidily', () => {
+    const text = serializePanelFile(emptyPanel());
+    expect(text).toContain('"breakers": {}');
+    expect(() => JSON.parse(text)).not.toThrow();
+    const back = parsePanelFile(text);
+    expect(back.ok && back.state.breakers).toEqual([]);
+  });
+
+  it('caps an absurd room name as well as an absurd label', () => {
+    const result = fromPanelFile({
+      version: PANEL_VERSION,
+      breakers: {
+        '1': { breaker: 'single', circuits: [{ room: 'r'.repeat(9000), label: 'l'.repeat(9000) }] },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const circuit = result.state.breakers[0].circuits[0];
+    expect(circuit.room.length).toBeLessThanOrEqual(200);
+    expect(circuit.label.length).toBeLessThanOrEqual(200);
+  });
+
   it('caps an absurd label and an absurd number of entries', () => {
     const breakers: Record<string, unknown> = {};
     for (let i = 1; i <= 2000; i++) {

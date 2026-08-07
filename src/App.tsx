@@ -252,21 +252,38 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reading a file yields, and the user can keep working while it does. The
+  // handler's captured `state` is a snapshot from before the read, so the
+  // "is there anything to lose?" question has to be asked of the live panel.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const onImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     // Reset first so picking the same file twice in a row still fires onChange.
     event.target.value = '';
     if (!file) return;
 
-    const result = parsePanelFile(await file.text());
+    let result;
+    try {
+      result = parsePanelFile(await file.text());
+    } catch {
+      showToast('That file could not be read');
+      return;
+    }
     if (!result.ok) {
       showToast(result.reason);
       return;
     }
-    if (
-      state.breakers.length > 0 &&
-      !window.confirm('Replace the current panel with the imported one?')
-    ) {
+
+    // A name typed or rooms set up before any breaker is placed is still work
+    // worth protecting, so the prompt is not gated on breakers alone.
+    const current = stateRef.current;
+    const hasWork =
+      current.breakers.length > 0 ||
+      current.rooms.length > 0 ||
+      current.name !== emptyPanel().name;
+    if (hasWork && !window.confirm('Replace the current panel with the imported one?')) {
       return;
     }
 
