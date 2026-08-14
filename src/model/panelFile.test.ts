@@ -249,6 +249,40 @@ describe('importing a file', () => {
     expect(result.state.breakers[0].circuits[0]).toEqual({ room: '', label: '' });
   });
 
+  it('imports the example from docs/panel-file-format.md verbatim', () => {
+    // Kept identical to the doc so a spec an agent generates against cannot
+    // drift away from what the importer actually accepts.
+    const result = parsePanelFile(`{
+  "version": 5,
+  "name": "Lusco House",
+  "rooms": ["Family", "Kitchen", "Garage"],
+  "breakers": {
+    "1": { "breaker": "single", "circuits": [{ "room": "Family", "label": "Lights" }] },
+    "2": { "breaker": "tandem", "circuits": [{ "room": "Family", "label": "Plugs" }, { "room": "Kitchen", "label": "Disposal" }] },
+    "3": { "breaker": "240+2x120", "circuits": [{ "label": "Bath" }, { "room": "Kitchen", "label": "Range" }, {}] },
+    "6": { "breaker": "quad" },
+    "12": { "breaker": "double", "circuits": [{ "room": "Garage", "label": "EV charger" }] }
+  }
+}`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.dropped).toBe(0);
+    expect(result.state.name).toBe('Lusco House');
+    expect(result.state.rooms).toEqual(['Family', 'Kitchen', 'Garage']);
+    expect(result.state.breakers.map((b) => [b.slot, b.config])).toEqual([
+      [1, 'single'],
+      [2, 'tandem'],
+      [3, 'double-240-2x120'],
+      [6, 'double-4x120'],
+      [12, 'double'],
+    ]);
+    // The doc says index 1 of a 240+2x120 is the 240V circuit.
+    expect(result.state.breakers[2].circuits[1]).toEqual({ room: 'Kitchen', label: 'Range' });
+    // And that the smallest valid file is accepted.
+    const minimal = parsePanelFile('{ "version": 5, "breakers": {} }');
+    expect(minimal.ok && minimal.state.breakers).toEqual([]);
+  });
+
   it('refuses a breaker name that collides with Object.prototype', () => {
     // Indexing a plain object with these returns a function, which would sail
     // past a truthiness check and then throw deeper in with no toast at all.

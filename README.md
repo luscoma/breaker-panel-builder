@@ -126,6 +126,10 @@ anyway.
 Exporting writes the circuits the arrangement currently shows. If you shrink a breaker's throw
 count the app keeps the hidden labels so you can switch back, but they do not reach the file.
 
+**[`docs/panel-file-format.md`](docs/panel-file-format.md) is the full specification** — every field,
+the slot numbering rules, the circuit order for each arrangement, what is refused versus skipped, the
+limits, and a JSON Schema. Written so a tool or an agent can generate a panel file from it.
+
 ## Development
 
 ```bash
