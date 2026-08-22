@@ -34,7 +34,8 @@ const STAGING_LINE_H = 15;
 
 function stagingHeight(state: PanelState): number {
   if (state.staging.length === 0) return 0;
-  return STAGING_HEAD_H + state.staging.length * STAGING_LINE_H + 8;
+  // The trailing pad leaves room for the last line's descenders.
+  return STAGING_HEAD_H + state.staging.length * STAGING_LINE_H + 14;
 }
 
 /**

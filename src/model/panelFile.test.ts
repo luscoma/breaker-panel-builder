@@ -263,7 +263,11 @@ describe('importing a file', () => {
     "3": { "breaker": "240+2x120", "circuits": [{ "label": "Bath" }, { "room": "Kitchen", "label": "Range" }, {}] },
     "6": { "breaker": "quad" },
     "12": { "breaker": "double", "circuits": [{ "room": "Garage", "label": "EV charger" }] }
-  }
+  },
+  "staging": [
+    { "breaker": "quad", "circuits": [{ "room": "Garage", "label": "Freezer" }, {}, {}, {}] },
+    { "breaker": "single" }
+  ]
 }`);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -279,6 +283,9 @@ describe('importing a file', () => {
     ]);
     // The doc says index 1 of a 240+2x120 is the 240V circuit.
     expect(result.state.breakers[2].circuits[1]).toEqual({ room: 'Kitchen', label: 'Range' });
+    // And that staging is a list of the same entries, minus any slot.
+    expect(result.state.staging.map((b) => b.config)).toEqual(['double-4x120', 'single']);
+    expect(result.state.staging[0].circuits[0]).toEqual({ room: 'Garage', label: 'Freezer' });
     // And that the smallest valid file is accepted.
     const minimal = parsePanelFile('{ "version": 5, "breakers": {} }');
     expect(minimal.ok && minimal.state.breakers).toEqual([]);

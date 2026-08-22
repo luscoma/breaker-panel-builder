@@ -53,6 +53,29 @@ right**, so each row holds slot `2r-1` and `2r`. A two-slot breaker occupies slo
 the next row in the *same* column, which is how it straddles both bus legs. That means a two-slot
 breaker can start anywhere from slot 1 to 46, but not at 47 or 48.
 
+## Staging
+
+Rearranging a panel means moving breakers past each other, and there is rarely a free slot to move
+them through. **Staging** is that free space: a bar pinned to the bottom of the screen holding
+breakers that are out of the panel but still part of the plan.
+
+- Drag a breaker onto the bar to set it aside, or use **Move to staging** in its editor. It keeps
+  its arrangement and every label — including circuits an arrangement shrink is currently hiding —
+  so it comes back exactly as it left. This is not Remove.
+- To put one back, drag it onto a slot, or tap it and then tap an empty slot the way the palette
+  works. Only slots it actually fits in light up.
+- Dropping a breaker from the palette onto the bar stages a fresh one, so a set of breakers can be
+  gathered before anything is committed to a slot.
+- **✕** on a staged breaker discards it for good.
+
+Staged breakers occupy no slots and are counted separately: they add nothing to the circuit,
+monitoring or slot totals, because they are not installed. They travel with the panel through the
+share link, the JSON file and the exported image.
+
+Because the bar owns the bottom edge, the panel does not auto-scroll during a drag — a drag that
+reached for the bar would otherwise scroll the panel out from under it. Staging is the way to move a
+breaker a long way down the panel: park it, scroll, place it.
+
 ## Rooms and labels
 
 Every circuit carries a **room** and a **label** — "Family" + "Lights", "Family" + "Plugs".
@@ -108,13 +131,18 @@ labelled drops its `circuits` list entirely:
     "2": { "breaker": "tandem", "circuits": [{ "room": "Family", "label": "Plugs" }, { "room": "Kitchen", "label": "Disposal" }] },
     "3": { "breaker": "240+2x120" },
     "6": { "breaker": "quad" }
-  }
+  },
+  "staging": [{ "breaker": "double", "circuits": [{ "room": "Garage", "label": "EV charger" }] }]
 }
 ```
 
 Breakers go by the names the app shows them under: `single`, `tandem`, `double`, `2x120`, `2x240`,
 `240+2x120`, `quad`. A circuit list has one entry per throw, in the order the breaker face draws
 them, and shorter lists are padded.
+
+`staging` is a list rather than a map, since a staged breaker has no slot to key it by. It is left
+out entirely when nothing is set aside, so a file from a panel with an empty staging area looks
+exactly like it always did.
 
 Because this file is meant to be edited by hand, importing is forgiving but talkative: a file with
 the wrong `version`, bad JSON, or no `breakers` section is refused outright and changes nothing,
@@ -156,7 +184,7 @@ GitHub Pages serves from.
 The panel is serialized to a compact JSON shape (rooms are stored once and referenced by index),
 compressed with `lz-string`, and written to the URL hash as `#p=…` — debounced, via
 `history.replaceState`, so it never spams browser history. A panel with 96 fully labelled circuits
-stays under 1.5 kB of URL.
+stays under 1.5 kB of URL, and staging adds to that only when something is actually in it.
 
 Nothing is written to local storage — the link is the save file. The format is versioned and only
 the current version is readable: earlier ones numbered slots and ordered throws differently, so

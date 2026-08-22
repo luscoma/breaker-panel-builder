@@ -410,6 +410,12 @@ export default function App() {
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
+      // dnd-kit auto-scrolls whenever the pointer is near the viewport edge,
+      // and the staging bar is pinned to the bottom edge — so picking a staged
+      // breaker up, or dragging a placed one down to the bar, scrolls the panel
+      // out from under the drag. Staging is itself the way to move a breaker
+      // across a long panel: park it, scroll, place it.
+      autoScroll={false}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragCancel={() => setActiveDrag(null)}

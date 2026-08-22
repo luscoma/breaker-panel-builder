@@ -18,7 +18,11 @@ The current version is **5**. A file with any other `version` is refused outrigh
     "3": { "breaker": "240+2x120", "circuits": [{ "label": "Bath" }, { "room": "Kitchen", "label": "Range" }, {}] },
     "6": { "breaker": "quad" },
     "12": { "breaker": "double", "circuits": [{ "room": "Garage", "label": "EV charger" }] }
-  }
+  },
+  "staging": [
+    { "breaker": "quad", "circuits": [{ "room": "Garage", "label": "Freezer" }, {}, {}, {}] },
+    { "breaker": "single" }
+  ]
 }
 ```
 
@@ -36,6 +40,7 @@ The smallest valid file:
 | `name` | string | no | The panel's name. Any string, including `""`. Defaults to `"Main Panel"` if absent or not a string. |
 | `rooms` | string[] | no | The room list. **Order matters** — it fixes each room's colour in the app and in the exported image. |
 | `breakers` | object | **yes** | Keyed by slot number. Refused if absent, `null`, or an array. |
+| `staging` | array | no | Breakers set aside, not in the panel. See [Staging](#staging). Omitted when empty. |
 
 `rooms` is optional even when circuits name rooms: any room named on a circuit is added automatically
 if it is missing. Listing rooms explicitly is still worthwhile because it fixes their colour order
@@ -103,6 +108,29 @@ When **every** circuit on a breaker is blank, omit `circuits` altogether:
 "6": { "breaker": "quad" }
 ```
 
+## Staging
+
+Staging holds breakers that exist in the plan but are not in the panel — the app puts them there
+when you drag one off a slot to make room, and they keep every label while they wait.
+
+It is a **list, not a map**, because a staged breaker has no slot to key it by. Each entry is the
+same object a `breakers` value is, minus any notion of position:
+
+```json
+"staging": [
+  { "breaker": "quad", "circuits": [{ "room": "Garage", "label": "Freezer" }, {}, {}, {}] },
+  { "breaker": "single" }
+]
+```
+
+- Order is preserved; it is the order the app shows them in.
+- Staged breakers occupy **no slots**, so they never collide with anything and never make a
+  `breakers` entry invalid. The only thing that can be wrong with one is its `breaker` name.
+- They are not counted in the panel's circuit, monitoring or slot totals — they are not installed.
+- Omit the key entirely when nothing is staged. `"staging": []` means the same thing.
+
+Generating a file with no `staging` key is always valid; it simply lands with staging empty.
+
 ## Slot numbering
 
 The panel has **48 slots in two columns**. Slots alternate across the face: **odd numbers run down
@@ -138,7 +166,12 @@ JSON object, has a `version` other than 5, or has no usable `breakers` object.
 - the entry overlaps a breaker already placed — the **lower slot number wins**, the later one is
   skipped,
 - the entry's value is not an object,
-- the file holds more than 500 breaker entries; the rest are skipped.
+- the file holds more than 500 breaker entries; the rest are skipped,
+- a `staging` entry is not an object, or names a breaker that is not one of the seven,
+- `staging` holds more than 48 entries; the rest are skipped.
+
+A `staging` value that is not an array is treated as absent rather than counted as a skip — there is
+no way to tell how many entries it was meant to hold.
 
 Anything else malformed is coerced rather than rejected: a non-string `name` falls back to the
 default, non-string rooms are ignored, a `circuits` value that is not an array is treated as absent,
@@ -151,6 +184,7 @@ and a circuit entry that is not an object becomes a blank circuit.
 | Slots | 48 |
 | Breakers | 48 (one per slot; fewer if any are two-slot) |
 | Breaker entries read from a file | 500 |
+| Staged breakers | 48 |
 | Circuits per breaker | 4 |
 | Rooms | 192 |
 | `room` / `label` length | 200 characters |
@@ -164,8 +198,8 @@ The minimum a generator must get right:
 3. Two-slot breakers are listed once, under the topmost slot, and leave `slot + 2` free.
 4. `circuits` is in the arrangement's throw order — remember `240+2x120` is 120V, **240V**, 120V.
 
-Everything else is optional. `rooms`, `name`, `circuits` and the individual `room` / `label` fields
-can all be omitted.
+Everything else is optional. `rooms`, `name`, `staging`, `circuits` and the individual `room` /
+`label` fields can all be omitted.
 
 ### JSON Schema
 
@@ -185,28 +219,36 @@ rather than failing — but a file matching this schema will always import clean
     "breakers": {
       "type": "object",
       "propertyNames": { "pattern": "^(?:[1-9]|[1-3][0-9]|4[0-8])$" },
-      "additionalProperties": {
-        "type": "object",
-        "required": ["breaker"],
-        "properties": {
-          "breaker": {
-            "enum": ["single", "tandem", "double", "2x120", "2x240", "240+2x120", "quad"]
-          },
-          "circuits": {
-            "type": "array",
-            "maxItems": 4,
-            "items": {
-              "type": "object",
-              "properties": {
-                "room": { "type": "string", "maxLength": 200 },
-                "label": { "type": "string", "maxLength": 200 }
-              },
-              "additionalProperties": false
-            }
-          }
+      "additionalProperties": { "$ref": "#/definitions/breaker" }
+    },
+    "staging": {
+      "type": "array",
+      "maxItems": 48,
+      "items": { "$ref": "#/definitions/breaker" }
+    }
+  },
+  "definitions": {
+    "breaker": {
+      "type": "object",
+      "required": ["breaker"],
+      "properties": {
+        "breaker": {
+          "enum": ["single", "tandem", "double", "2x120", "2x240", "240+2x120", "quad"]
         },
-        "additionalProperties": false
-      }
+        "circuits": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "properties": {
+              "room": { "type": "string", "maxLength": 200 },
+              "label": { "type": "string", "maxLength": 200 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
