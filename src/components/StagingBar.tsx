@@ -1,4 +1,5 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { MutableRefObject } from 'react';
 import { BreakerBody } from './BreakerView';
 import { CONFIGS, MAX_STAGING, StagedBreaker } from '../model/types';
 
@@ -76,6 +77,8 @@ function StagedItem({ breaker, armed, roomColor, onArm, onDiscard }: StagedItemP
 }
 
 interface StagingBarProps {
+  /** Also held by App, which reads the bar's live rect during collision detection. */
+  barRef: MutableRefObject<HTMLDivElement | null>;
   staging: StagedBreaker[];
   /** The staged breaker waiting for a slot tap, if any. */
   armedId: string | null;
@@ -95,6 +98,7 @@ interface StagingBarProps {
  * began would be measured at one size and hit-tested at another.
  */
 export function StagingBar({
+  barRef,
   staging,
   armedId,
   dragging,
@@ -111,7 +115,14 @@ export function StagingBar({
   if (full) classes.push('staging--full');
 
   return (
-    <div ref={setNodeRef} className={classes.join(' ')} aria-label="Staging area">
+    <div
+      ref={(node) => {
+        setNodeRef(node);
+        barRef.current = node;
+      }}
+      className={classes.join(' ')}
+      aria-label="Staging area"
+    >
       <div className="staging__head">
         <span className="staging__title">Staging</span>
         <span className="staging__count">{staging.length}</span>

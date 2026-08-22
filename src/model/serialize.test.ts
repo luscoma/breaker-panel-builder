@@ -337,3 +337,38 @@ describe('staging in the URL', () => {
     expect(decodeState(encodeState(state))!.staging).toHaveLength(MAX_STAGING);
   });
 });
+
+describe('the room cap covers staging', () => {
+  it('carries a room named only by a staged circuit on a maximally-roomed panel', () => {
+    // MAX_ROOMS used to count the panel alone, so a full staging area could
+    // reference rooms the encoder truncated away — blanking those circuits on
+    // the far side of a link with nothing said about it.
+    let state = emptyPanel();
+    for (let slot = 1; slot <= 48; slot++) {
+      state = placeBreaker(state, 'tandem', slot);
+      const id = state.breakers[slot - 1].id;
+      state = commitCircuitRoom(state, id, 0, `Placed ${slot}A`);
+      state = commitCircuitRoom(state, id, 1, `Placed ${slot}B`);
+    }
+    for (let i = 0; i < MAX_STAGING; i++) {
+      state = stageNewBreaker(state, 'double-4x120');
+      state = {
+        ...state,
+        staging: state.staging.map((b, j) =>
+          j === i
+            ? { ...b, circuits: b.circuits.map((_, k) => ({ room: `Staged ${i}-${k}`, label: '' })) }
+            : b,
+        ),
+      };
+    }
+
+    const decoded = decodeState(encodeState(state))!;
+    const blanked = decoded.staging.flatMap((b) => b.circuits).filter((c) => !c.room);
+    expect(blanked).toEqual([]);
+    expect(decoded.staging[MAX_STAGING - 1].circuits[3].room).toBe(`Staged ${MAX_STAGING - 1}-3`);
+  });
+
+  it('leaves room for every circuit a panel and a full staging area can name', () => {
+    expect(MAX_ROOMS).toBe((48 + MAX_STAGING) * 4);
+  });
+});

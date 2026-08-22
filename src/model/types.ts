@@ -168,15 +168,19 @@ export const ROOM_COLORS_LIGHT = [
 export const MAX_CIRCUITS = 4;
 
 /**
- * Every slot could hold a breaker carrying MAX_CIRCUITS circuits, each naming a
- * different room, so this is the most a panel can legitimately reference. The
- * encoder and decoder share the cap so a shared link can never carry rooms the
- * far side would throw away.
- */
-export const MAX_ROOMS = SLOT_COUNT * MAX_CIRCUITS;
-
-/**
  * Staging holds breakers that came off the panel, so it never needs to exceed
  * what the panel could have held. Keeps a shared link bounded.
  */
 export const MAX_STAGING = SLOT_COUNT;
+
+/**
+ * Every slot could hold a breaker carrying MAX_CIRCUITS circuits, each naming a
+ * different room — and so could every breaker waiting in staging, whose labels
+ * are encoded just the same. Counting only the panel would let a full staging
+ * area reference rooms the encoder then truncated away, blanking those circuits
+ * on the far side of a link with nothing said about it.
+ *
+ * The encoder and decoder share the cap so a shared link can never carry rooms
+ * the far side would throw away.
+ */
+export const MAX_ROOMS = (SLOT_COUNT + MAX_STAGING) * MAX_CIRCUITS;

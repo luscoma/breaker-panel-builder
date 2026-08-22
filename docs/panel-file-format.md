@@ -46,8 +46,8 @@ The smallest valid file:
 if it is missing. Listing rooms explicitly is still worthwhile because it fixes their colour order
 and lets you carry rooms that no circuit uses yet.
 
-Room names are trimmed; blanks and duplicates are ignored. At most 192 rooms are kept (one per
-circuit on a full panel).
+Room names are trimmed; blanks and duplicates are ignored. At most 384 rooms are kept — one per
+circuit on a full panel, plus one per circuit on a full staging area.
 
 ## Breakers
 
@@ -187,7 +187,7 @@ and a circuit entry that is not an object becomes a blank circuit.
 | Breaker entries read from a file | 500 |
 | Staged breakers | 48 |
 | Circuits per breaker | 4 |
-| Rooms | 192 |
+| Rooms | 384 |
 | `room` / `label` length | 200 characters |
 
 ## Generating a file
@@ -216,7 +216,7 @@ rather than failing — but a file matching this schema will always import clean
   "properties": {
     "version": { "const": 5 },
     "name": { "type": "string" },
-    "rooms": { "type": "array", "items": { "type": "string", "maxLength": 200 }, "maxItems": 192 },
+    "rooms": { "type": "array", "items": { "type": "string", "maxLength": 200 }, "maxItems": 384 },
     "breakers": {
       "type": "object",
       "propertyNames": { "pattern": "^(?:[1-9]|[1-3][0-9]|4[0-8])$" },

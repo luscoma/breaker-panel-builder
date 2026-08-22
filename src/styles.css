@@ -36,8 +36,10 @@ body {
 .app {
   max-width: 760px;
   margin: 0 auto;
-  /* Clears the staging bar, which is fixed to the bottom edge on every screen. */
-  padding: 12px 12px calc(var(--staging-h) + 24px);
+  /* Clears the staging bar, which is fixed to the bottom edge on every screen.
+     The bar's own height includes the safe-area inset, so this must too, or the
+     last row hides under it on a phone with a home indicator. */
+  padding: 12px 12px calc(var(--staging-h) + env(safe-area-inset-bottom) + 24px);
 }
 
 /* ---------- top bar ---------- */
@@ -698,7 +700,7 @@ body {
 .staged__name {
   flex: none;
   /* Leaves the top-right corner to the discard button. */
-  padding: 0 22px 0 3px;
+  padding: 0 26px 0 3px;
   font-size: 10px;
   font-weight: 700;
   color: var(--muted);
@@ -733,8 +735,10 @@ body {
   top: 1px;
   right: 1px;
   z-index: 3;
-  width: 22px;
-  height: 22px;
+  /* At least the 24px floor a touch target needs, and it sits right beside a
+     drag handle, so it cannot afford to be fiddly. */
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -781,7 +785,7 @@ body {
   }
 
   .app {
-    padding: 12px 8px calc(var(--staging-h) + 24px);
+    padding: 12px 8px calc(var(--staging-h) + env(safe-area-inset-bottom) + 24px);
   }
 
   .staging {

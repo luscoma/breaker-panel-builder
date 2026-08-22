@@ -1,4 +1,5 @@
 import {
+  CollisionDetection,
   DndContext,
   DragEndEvent,
   DragOverlay,
@@ -110,6 +111,39 @@ type ActiveDrag =
   | { kind: 'breaker'; id: string }
   | { kind: 'staged'; id: string };
 
+/**
+ * Whatever the pointer is over *on screen* wins.
+ *
+ * The staging bar is a fixed overlay along the bottom edge, so panel rows
+ * scroll underneath it. pointerWithin reports both the bar and the slot hidden
+ * behind it, then ranks by distance to centre — which a 145x40 slot always wins
+ * against a 390x92 bar. Left to itself that drops the breaker into a slot the
+ * bar is covering, where it is genuinely invisible: elementFromPoint at the
+ * breaker's own centre returns the staging bar.
+ *
+ * The bar's own rect is read live rather than taken from dnd-kit's measurement,
+ * which is captured once at drag start and offset by page scroll — an
+ * adjustment that is wrong for a fixed element that does not scroll.
+ */
+function detectCollisions(stagingRect: () => DOMRect | null): CollisionDetection {
+  return (args) => {
+    const pointer = args.pointerCoordinates;
+    const bar = pointer && stagingRect();
+    if (
+      pointer &&
+      bar &&
+      pointer.x >= bar.left &&
+      pointer.x <= bar.right &&
+      pointer.y >= bar.top &&
+      pointer.y <= bar.bottom
+    ) {
+      const staging = args.droppableContainers.find((c) => c.id === STAGING_DROPPABLE_ID);
+      if (staging) return [{ id: staging.id }];
+    }
+    return pointerWithin(args);
+  };
+}
+
 const REJECTED_LINK = 'That link could not be read — starting a new panel';
 
 /**
@@ -136,6 +170,14 @@ export default function App() {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const lastHashRef = useRef<string>('');
+
+  // The staging bar's live rect, so collision detection can prefer it over any
+  // slot it happens to be covering.
+  const stagingRef = useRef<HTMLDivElement | null>(null);
+  const collisionDetection = useMemo(
+    () => detectCollisions(() => stagingRef.current?.getBoundingClientRect() ?? null),
+    [],
+  );
 
   const sensors = useSensors(
     // A small drag threshold keeps taps working for select/edit, and the
@@ -409,7 +451,7 @@ export default function App() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={collisionDetection}
       // dnd-kit auto-scrolls whenever the pointer is near the viewport edge,
       // and the staging bar is pinned to the bottom edge — so picking a staged
       // breaker up, or dragging a placed one down to the bar, scrolls the panel
@@ -535,6 +577,7 @@ export default function App() {
         )}
 
         <StagingBar
+          barRef={stagingRef}
           staging={state.staging}
           armedId={armedStagedId}
           dragging={activeDrag !== null}
