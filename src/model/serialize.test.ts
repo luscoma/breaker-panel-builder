@@ -1,4 +1,4 @@
-import { compressToEncodedURIComponent } from 'lz-string';
+import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { describe, expect, it } from 'vitest';
 import {
   addRoom,
@@ -8,9 +8,10 @@ import {
   setCircuitLabel,
   setCircuitRoom,
   setName,
+  stageNewBreaker,
 } from './panel';
 import { decodeState, encodeState, hashHasPanel, stateFromHash, stateToHash } from './serialize';
-import { MAX_ROOMS } from './types';
+import { MAX_ROOMS, MAX_STAGING, PANEL_VERSION } from './types';
 
 function sampleState() {
   let state = setName(emptyPanel(), 'House Panel');
@@ -217,5 +218,122 @@ describe('URL state', () => {
       breakers: [{ ...state.breakers[0], config: 'not-a-config' as never }],
     });
     expect(decodeState(encoded)!.breakers).toHaveLength(0);
+  });
+});
+
+describe('staging in the URL', () => {
+  it('round-trips staged breakers with their arrangement and labels', () => {
+    let state = sampleState();
+    state = stageNewBreaker(state, 'double-240-2x120');
+    const id = state.staging[0].id;
+    state = commitCircuitRoom(state, id, 0, 'Shed');
+    state = {
+      ...state,
+      staging: [
+        {
+          ...state.staging[0],
+          circuits: [
+            { room: 'Shed', label: 'Lights' },
+            { room: '', label: 'Well pump' },
+            { room: '', label: '' },
+          ],
+        },
+      ],
+    };
+
+    const decoded = decodeState(encodeState(state));
+    expect(decoded).not.toBeNull();
+    expect(decoded!.staging).toHaveLength(1);
+    expect(decoded!.staging[0].config).toBe('double-240-2x120');
+    expect(decoded!.staging[0].circuits).toEqual([
+      { room: 'Shed', label: 'Lights' },
+      { room: '', label: 'Well pump' },
+      { room: '', label: '' },
+    ]);
+    // The room a staged circuit names has to survive the trip too.
+    expect(decoded!.rooms).toContain('Shed');
+  });
+
+  it('gives every decoded breaker a distinct id, staging included', () => {
+    let state = emptyPanel();
+    state = placeBreaker(state, 'single', 1);
+    state = placeBreaker(state, 'single', 2);
+    state = stageNewBreaker(state, 'tandem');
+    state = stageNewBreaker(state, 'tandem');
+
+    const decoded = decodeState(encodeState(state))!;
+    const ids = [...decoded.breakers, ...decoded.staging].map((b) => b.id);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it('leaves staging out of a link entirely when nothing is set aside', () => {
+    const state = sampleState();
+    const json = JSON.parse(
+      decompressFromEncodedURIComponent(encodeState(state)) as string,
+    );
+    expect(json).not.toHaveProperty('sg');
+    expect(decodeState(encodeState(state))!.staging).toEqual([]);
+  });
+
+  it('lands with empty staging when a payload has no sg at all', () => {
+    const payload = compressToEncodedURIComponent(
+      JSON.stringify({ v: PANEL_VERSION, n: 'Panel', r: [], b: [{ c: 's', s: 1, x: [] }] }),
+    );
+    expect(decodeState(payload)!.staging).toEqual([]);
+  });
+
+  it('drops junk staging entries instead of failing the whole link', () => {
+    const payload = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: PANEL_VERSION,
+        n: 'Panel',
+        r: [],
+        b: [],
+        sg: [null, 'nope', { c: 'not-a-code', x: [] }, { c: 'q4', x: [] }],
+      }),
+    );
+    const decoded = decodeState(payload)!;
+    expect(decoded.staging).toHaveLength(1);
+    expect(decoded.staging[0].config).toBe('double-4x120');
+  });
+
+  it('refuses a prototype-chain name as a staged breaker code', () => {
+    // A plain object lookup would answer with a function here and then throw
+    // mid-render, white-screening the app from a crafted link.
+    for (const code of ['constructor', '__proto__', 'toString', 'valueOf']) {
+      const payload = compressToEncodedURIComponent(
+        JSON.stringify({ v: PANEL_VERSION, n: 'P', r: [], b: [], sg: [{ c: code, x: [] }] }),
+      );
+      expect(decodeState(payload)!.staging).toEqual([]);
+    }
+  });
+
+  it('caps staging so a crafted link cannot carry thousands of breakers', () => {
+    const payload = compressToEncodedURIComponent(
+      JSON.stringify({
+        v: PANEL_VERSION,
+        n: 'P',
+        r: [],
+        b: [],
+        sg: Array.from({ length: MAX_STAGING + 40 }, () => ({ c: 's', x: [] })),
+      }),
+    );
+    expect(decodeState(payload)!.staging).toHaveLength(MAX_STAGING);
+  });
+
+  it('keeps a fully staged panel inside a workable URL', () => {
+    let state = emptyPanel();
+    for (let i = 0; i < MAX_STAGING; i++) {
+      state = stageNewBreaker(state, 'double-4x120');
+      state = commitCircuitRoom(state, state.staging[i].id, 0, `Room ${i}`);
+      state = {
+        ...state,
+        staging: state.staging.map((b, j) =>
+          j === i ? { ...b, circuits: b.circuits.map(() => ({ room: `Room ${i}`, label: 'Plugs' })) } : b,
+        ),
+      };
+    }
+    expect(stateToHash(state).length).toBeLessThan(4000);
+    expect(decodeState(encodeState(state))!.staging).toHaveLength(MAX_STAGING);
   });
 });

@@ -1,9 +1,10 @@
 import { useDraggable } from '@dnd-kit/core';
 import { columnOf, rowOf, slotsFor, throwsFor } from '../model/panel';
-import { Breaker, PanelState } from '../model/types';
+import { Breaker, PanelState, StagedBreaker } from '../model/types';
 
 interface BreakerBodyProps {
-  breaker: Breaker;
+  /** Staged, so the same face draws a breaker on the panel and one set aside. */
+  breaker: StagedBreaker;
   roomColor: (room: string) => string | null;
   compact?: boolean;
 }

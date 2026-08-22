@@ -24,13 +24,21 @@ export interface CircuitLabel {
   label: string;
 }
 
-export interface Breaker {
+/**
+ * A breaker that exists but is not in the panel — it sits in staging while the
+ * layout is rearranged. Identical to a placed breaker minus its slot, so every
+ * placement and monitoring rule applies unchanged once it lands.
+ */
+export interface StagedBreaker {
   id: string;
   config: BreakerConfig;
-  /** Topmost slot this breaker occupies. */
-  slot: number;
   /** One entry per throw, in order from the top of the breaker. */
   circuits: CircuitLabel[];
+}
+
+export interface Breaker extends StagedBreaker {
+  /** Topmost slot this breaker occupies. */
+  slot: number;
 }
 
 /**
@@ -46,6 +54,8 @@ export interface PanelState {
   /** Room list in insertion order; also fixes each room's colour. */
   rooms: string[];
   breakers: Breaker[];
+  /** Breakers set aside while rearranging. Ordered; not part of the panel. */
+  staging: StagedBreaker[];
 }
 
 export interface ConfigDef {
@@ -164,3 +174,9 @@ export const MAX_CIRCUITS = 4;
  * far side would throw away.
  */
 export const MAX_ROOMS = SLOT_COUNT * MAX_CIRCUITS;
+
+/**
+ * Staging holds breakers that came off the panel, so it never needs to exceed
+ * what the panel could have held. Keeps a shared link bounded.
+ */
+export const MAX_STAGING = SLOT_COUNT;

@@ -16,6 +16,7 @@ import { FileMenu } from './components/FileMenu';
 import { Palette } from './components/Palette';
 import { PanelGrid } from './components/PanelGrid';
 import { RoomsSheet } from './components/RoomsSheet';
+import { STAGING_DROPPABLE_ID, StagingBar } from './components/StagingBar';
 import { copyPngToClipboard, downloadSvg } from './export/png';
 import { downloadPanelJson } from './export/json';
 import { parsePanelFile } from './model/panelFile';
@@ -27,7 +28,9 @@ import {
   knownLabels,
   moveBreaker,
   placeBreaker,
+  placeFromStaging,
   removeBreaker,
+  removeFromStaging,
   removeRoom,
   renameRoom,
   roomColor,
@@ -37,15 +40,21 @@ import {
   setConfig,
   setName,
   slotsFor,
+  stageBreaker,
+  stageNewBreaker,
   summarize,
 } from './model/panel';
 import { hashHasPanel, stateFromHash, stateToHash } from './model/serialize';
-import { BreakerConfig, PanelState, SLOT_COUNT } from './model/types';
+import { BreakerConfig, MAX_STAGING, PanelState, SLOT_COUNT } from './model/types';
 
 type Action =
   | { type: 'place'; config: BreakerConfig; slot: number }
   | { type: 'move'; id: string; slot: number }
   | { type: 'remove'; id: string }
+  | { type: 'stage'; id: string }
+  | { type: 'stageNew'; config: BreakerConfig }
+  | { type: 'unstage'; id: string; slot: number }
+  | { type: 'discardStaged'; id: string }
   | { type: 'config'; id: string; config: BreakerConfig }
   | { type: 'room'; id: string; circuit: number; room: string }
   | { type: 'commitRoom'; id: string; circuit: number; room: string }
@@ -65,6 +74,14 @@ function reducer(state: PanelState, action: Action): PanelState {
       return moveBreaker(state, action.id, action.slot);
     case 'remove':
       return removeBreaker(state, action.id);
+    case 'stage':
+      return stageBreaker(state, action.id);
+    case 'stageNew':
+      return stageNewBreaker(state, action.config);
+    case 'unstage':
+      return placeFromStaging(state, action.id, action.slot);
+    case 'discardStaged':
+      return removeFromStaging(state, action.id);
     case 'config':
       return setConfig(state, action.id, action.config);
     case 'room':
@@ -88,7 +105,10 @@ function reducer(state: PanelState, action: Action): PanelState {
   }
 }
 
-type ActiveDrag = { kind: 'palette'; config: BreakerConfig } | { kind: 'breaker'; id: string };
+type ActiveDrag =
+  | { kind: 'palette'; config: BreakerConfig }
+  | { kind: 'breaker'; id: string }
+  | { kind: 'staged'; id: string };
 
 const REJECTED_LINK = 'That link could not be read — starting a new panel';
 
@@ -109,6 +129,9 @@ export default function App() {
   const [state, dispatch] = useReducer(reducer, initial.state);
   const [selectedConfig, setSelectedConfig] = useState<BreakerConfig | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A staged breaker picked up by tap, waiting for a slot to land in. It and
+  // selectedConfig are mutually exclusive: only one thing is ever in hand.
+  const [armedStagedId, setArmedStagedId] = useState<string | null>(null);
   const [roomsOpen, setRoomsOpen] = useState(false);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -151,6 +174,7 @@ export default function App() {
         // The incoming panel's breakers are unrelated to whatever was selected,
         // so drop the selection rather than let the editor rebind to a stranger.
         setSelectedId(null);
+        setArmedStagedId(null);
         setRoomsOpen(false);
         dispatch({ type: 'load', state: loaded });
         return;
@@ -174,16 +198,29 @@ export default function App() {
   const colorForRoom = useCallback((room: string) => roomColor(state, room), [state]);
   const labels = useMemo(() => knownLabels(state), [state]);
 
+  /** The arrangement a pending action would place, whatever it came from. */
+  const configOf = useCallback(
+    (pending: ActiveDrag): BreakerConfig | undefined => {
+      if (pending.kind === 'palette') return pending.config;
+      const from = pending.kind === 'staged' ? state.staging : state.breakers;
+      return from.find((b) => b.id === pending.id)?.config;
+    },
+    [state],
+  );
+
   const validSlots = useMemo(() => {
-    const pending =
-      activeDrag ?? (selectedConfig ? { kind: 'palette' as const, config: selectedConfig } : null);
+    const armed: ActiveDrag | null = selectedConfig
+      ? { kind: 'palette', config: selectedConfig }
+      : armedStagedId
+        ? { kind: 'staged', id: armedStagedId }
+        : null;
+    const pending = activeDrag ?? armed;
     if (!pending) return null;
 
-    const config =
-      pending.kind === 'palette'
-        ? pending.config
-        : state.breakers.find((b) => b.id === pending.id)?.config;
+    const config = configOf(pending);
     if (!config) return null;
+    // Only a breaker already on the panel needs excluding from the collision
+    // check — a staged one occupies no slots to begin with.
     const ignoreId = pending.kind === 'breaker' ? pending.id : undefined;
 
     const valid = new Set<number>();
@@ -191,43 +228,84 @@ export default function App() {
       if (canPlace(state, config, slot, ignoreId)) valid.add(slot);
     }
     return valid;
-  }, [activeDrag, selectedConfig, state]);
+  }, [activeDrag, armedStagedId, configOf, selectedConfig, state]);
 
   const onDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as ActiveDrag | undefined;
-    if (data?.kind === 'palette' || data?.kind === 'breaker') setActiveDrag(data);
+    if (data?.kind === 'palette' || data?.kind === 'breaker' || data?.kind === 'staged') {
+      setActiveDrag(data);
+    }
     setSelectedId(null);
+    setArmedStagedId(null);
   };
 
   const onDragEnd = (event: DragEndEvent) => {
     const drag = event.active.data.current as ActiveDrag | undefined;
+    const overStaging = event.over?.id === STAGING_DROPPABLE_ID;
     const slot = event.over?.data.current?.slot as number | undefined;
     setActiveDrag(null);
-    if (!drag || slot === undefined) return;
+    if (!drag) return;
 
-    if (drag.kind === 'palette') {
-      if (!canPlace(state, drag.config, slot)) {
-        showToast('That breaker does not fit there');
+    if (overStaging) {
+      // Dropping a staged breaker back on the bar it came from is a no-op, not
+      // a duplicate.
+      if (drag.kind === 'staged') return;
+      if (state.staging.length >= MAX_STAGING) {
+        showToast('Staging is full');
         return;
       }
-      dispatch({ type: 'place', config: drag.config, slot });
-    } else {
-      const breaker = state.breakers.find((b) => b.id === drag.id);
-      if (breaker && !canPlace(state, breaker.config, slot, breaker.id)) {
-        showToast('That breaker does not fit there');
-        return;
-      }
-      dispatch({ type: 'move', id: drag.id, slot });
+      if (drag.kind === 'palette') dispatch({ type: 'stageNew', config: drag.config });
+      else dispatch({ type: 'stage', id: drag.id });
+      return;
     }
+
+    if (slot === undefined) return;
+    const config = configOf(drag);
+    if (!config) return;
+    const ignoreId = drag.kind === 'breaker' ? drag.id : undefined;
+    if (!canPlace(state, config, slot, ignoreId)) {
+      showToast('That breaker does not fit there');
+      return;
+    }
+
+    if (drag.kind === 'palette') dispatch({ type: 'place', config, slot });
+    else if (drag.kind === 'staged') dispatch({ type: 'unstage', id: drag.id, slot });
+    else dispatch({ type: 'move', id: drag.id, slot });
   };
 
   const onSlotTap = (slot: number) => {
+    // A staged breaker in hand wins: it is the more deliberate of the two, and
+    // arming one already cleared the palette selection.
+    if (armedStagedId) {
+      const staged = state.staging.find((b) => b.id === armedStagedId);
+      if (!staged) {
+        setArmedStagedId(null);
+        return;
+      }
+      if (!canPlace(state, staged.config, slot)) {
+        showToast('That breaker does not fit there');
+        return;
+      }
+      dispatch({ type: 'unstage', id: armedStagedId, slot });
+      setArmedStagedId(null);
+      return;
+    }
     if (!selectedConfig) return;
     if (!canPlace(state, selectedConfig, slot)) {
       showToast('That breaker does not fit there');
       return;
     }
     dispatch({ type: 'place', config: selectedConfig, slot });
+  };
+
+  const onStageSelected = (id: string) => {
+    if (state.staging.length >= MAX_STAGING) {
+      showToast('Staging is full — place or discard one first');
+      return;
+    }
+    dispatch({ type: 'stage', id });
+    setSelectedId(null);
+    showToast('Moved to staging');
   };
 
   const onCopyLink = async () => {
@@ -281,6 +359,7 @@ export default function App() {
     const current = stateRef.current;
     const hasWork =
       current.breakers.length > 0 ||
+      current.staging.length > 0 ||
       current.rooms.length > 0 ||
       current.name !== emptyPanel().name;
     if (hasWork && !window.confirm('Replace the current panel with the imported one?')) {
@@ -290,23 +369,31 @@ export default function App() {
     // The imported breakers are unrelated to whatever was selected, so drop the
     // selection rather than let the editor rebind to a stranger.
     setSelectedId(null);
+    setArmedStagedId(null);
     setRoomsOpen(false);
     dispatch({ type: 'load', state: result.state });
 
     const placed = result.state.breakers.length;
+    const staged = result.state.staging.length;
     const count = `${placed} breaker${placed === 1 ? '' : 's'}`;
+    const withStaging = staged > 0 ? `${count} and ${staged} in staging` : count;
     showToast(
       result.dropped > 0
-        ? `Imported ${count}, skipped ${result.dropped} that did not fit`
-        : `Imported ${count}`,
+        ? `Imported ${withStaging}, skipped ${result.dropped} that did not fit`
+        : `Imported ${withStaging}`,
     );
   };
 
   const onClear = () => {
-    if (state.breakers.length === 0) return;
-    if (window.confirm('Remove every breaker from this panel?')) {
+    if (state.breakers.length === 0 && state.staging.length === 0) return;
+    const question =
+      state.staging.length > 0
+        ? 'Remove every breaker from this panel and from staging?'
+        : 'Remove every breaker from this panel?';
+    if (window.confirm(question)) {
       dispatch({ type: 'clear' });
       setSelectedId(null);
+      setArmedStagedId(null);
     }
   };
 
@@ -315,7 +402,9 @@ export default function App() {
   const activeBreaker =
     activeDrag?.kind === 'breaker'
       ? state.breakers.find((b) => b.id === activeDrag.id) ?? null
-      : null;
+      : activeDrag?.kind === 'staged'
+        ? state.staging.find((b) => b.id === activeDrag.id) ?? null
+        : null;
 
   return (
     <DndContext
@@ -366,13 +455,21 @@ export default function App() {
           <span>
             <strong>{stats.usedSlots}</strong>/{SLOT_COUNT} slots
           </span>
+          {stats.staged > 0 && (
+            <span>
+              <strong>{stats.staged}</strong> staged
+            </span>
+          )}
         </div>
 
         <Palette
           selectedConfig={selectedConfig}
-          onSelectConfig={(config) =>
-            setSelectedConfig((current) => (current === config ? null : config))
-          }
+          onSelectConfig={(config) => {
+            // Only one breaker is ever in hand, so picking from the palette
+            // puts down whatever was taken out of staging.
+            setArmedStagedId(null);
+            setSelectedConfig((current) => (current === config ? null : config));
+          }}
         />
 
         <PanelGrid
@@ -410,6 +507,7 @@ export default function App() {
             onLabelChange={(circuit, label) =>
               dispatch({ type: 'label', id: selected.id, circuit, label })
             }
+            onStage={() => onStageSelected(selected.id)}
             onRemove={() => {
               dispatch({ type: 'remove', id: selected.id });
               setSelectedId(null);
@@ -429,6 +527,22 @@ export default function App() {
             onClose={() => setRoomsOpen(false)}
           />
         )}
+
+        <StagingBar
+          staging={state.staging}
+          armedId={armedStagedId}
+          dragging={activeDrag !== null}
+          roomColor={colorForRoom}
+          onArm={(id) => {
+            setSelectedConfig(null);
+            setSelectedId(null);
+            setArmedStagedId((current) => (current === id ? null : id));
+          }}
+          onDiscard={(id) => {
+            setArmedStagedId((current) => (current === id ? null : current));
+            dispatch({ type: 'discardStaged', id });
+          }}
+        />
 
         <input
           ref={fileInputRef}
@@ -450,7 +564,7 @@ export default function App() {
             style={{ '--overlay-slots': slotsFor(activeDrag.config) } as CSSProperties}
           >
             <BreakerBody
-              breaker={{ id: 'preview', config: activeDrag.config, slot: 1, circuits: [] }}
+              breaker={{ id: 'preview', config: activeDrag.config, circuits: [] }}
               roomColor={colorForRoom}
               compact
             />

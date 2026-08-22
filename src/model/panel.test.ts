@@ -22,12 +22,16 @@ import {
   setCircuitLabel,
   setCircuitRoom,
   visibleCircuits,
+  placeFromStaging,
+  removeFromStaging,
   setConfig,
   slotsFor,
+  stageBreaker,
+  stageNewBreaker,
   summarize,
   throwsFor,
 } from './panel';
-import { ALL_CONFIGS, MAX_ROOMS } from './types';
+import { ALL_CONFIGS, MAX_ROOMS, MAX_STAGING } from './types';
 
 describe('breaker widths and throws', () => {
   it('has only one-slot and two-slot breakers', () => {
@@ -364,6 +368,7 @@ describe('summarize', () => {
       circuits: 10,
       monitoredCircuits: 4,
       usedSlots: 8,
+      staged: 0,
     });
   });
 
@@ -375,5 +380,160 @@ describe('summarize', () => {
     let tandems = emptyPanel();
     for (let slot = 1; slot <= 48; slot++) tandems = placeBreaker(tandems, 'tandem', slot);
     expect(summarize(tandems)).toMatchObject({ circuits: 96, monitoredCircuits: 0, usedSlots: 48 });
+  });
+});
+
+describe('staging', () => {
+  it('takes a breaker off the panel keeping its id, arrangement and labels', () => {
+    let state = placeBreaker(emptyPanel(), 'double-4x120', 3);
+    const id = state.breakers[0].id;
+    state = commitCircuitRoom(state, id, 0, 'Garage');
+    state = setCircuitLabel(state, id, 0, 'EV charger');
+
+    state = stageBreaker(state, id);
+
+    expect(state.breakers).toHaveLength(0);
+    expect(state.staging).toEqual([
+      {
+        id,
+        config: 'double-4x120',
+        circuits: [
+          { room: 'Garage', label: 'EV charger' },
+          { room: '', label: '' },
+          { room: '', label: '' },
+          { room: '', label: '' },
+        ],
+      },
+    ]);
+  });
+
+  it('frees the slots a staged breaker used to occupy', () => {
+    let state = placeBreaker(emptyPanel(), 'double', 3); // occupies 3 and 5
+    expect(canPlace(state, 'single', 5)).toBe(false);
+
+    state = stageBreaker(state, state.breakers[0].id);
+    expect(canPlace(state, 'single', 5)).toBe(true);
+  });
+
+  it('keeps hidden circuits, so a shrunken breaker comes back whole', () => {
+    let state = placeBreaker(emptyPanel(), 'double-4x120', 1);
+    const id = state.breakers[0].id;
+    state = setCircuitLabel(state, id, 3, 'Shed');
+    state = setConfig(state, id, 'double'); // one throw; the other three hide
+
+    state = stageBreaker(state, id);
+    state = placeFromStaging(state, id, 1);
+    state = setConfig(state, state.breakers[0].id, 'double-4x120');
+
+    expect(state.breakers[0].circuits[3].label).toBe('Shed');
+  });
+
+  it('puts a staged breaker back on the panel, out of staging', () => {
+    let state = placeBreaker(emptyPanel(), 'tandem', 8);
+    const id = state.breakers[0].id;
+    state = stageBreaker(state, id);
+    state = placeFromStaging(state, id, 12);
+
+    expect(state.staging).toHaveLength(0);
+    expect(state.breakers).toHaveLength(1);
+    expect(state.breakers[0]).toMatchObject({ id, config: 'tandem', slot: 12 });
+  });
+
+  it('refuses a placement that does not fit, leaving the breaker staged', () => {
+    let state = placeBreaker(emptyPanel(), 'double', 5); // occupies 5 and 7
+    state = placeBreaker(state, 'double-4x120', 1);
+    const id = state.breakers[1].id;
+    state = stageBreaker(state, id);
+
+    // 5 is taken, and a two-slot breaker cannot start at 47.
+    expect(placeFromStaging(state, id, 5)).toBe(state);
+    expect(placeFromStaging(state, id, 47)).toBe(state);
+    expect(state.staging).toHaveLength(1);
+  });
+
+  it('discards a staged breaker without touching the panel', () => {
+    let state = placeBreaker(emptyPanel(), 'single', 1);
+    state = placeBreaker(state, 'single', 2);
+    state = stageBreaker(state, state.breakers[1].id);
+    const id = state.staging[0].id;
+
+    state = removeFromStaging(state, id);
+    expect(state.staging).toHaveLength(0);
+    expect(state.breakers).toHaveLength(1);
+  });
+
+  it('stages a brand-new breaker with blank circuits', () => {
+    const state = stageNewBreaker(emptyPanel(), 'double-240-2x120');
+    expect(state.breakers).toHaveLength(0);
+    expect(state.staging[0].config).toBe('double-240-2x120');
+    expect(state.staging[0].circuits).toHaveLength(3);
+  });
+
+  it('mints a distinct id for every staged breaker', () => {
+    let state = emptyPanel();
+    for (let i = 0; i < 10; i++) state = stageNewBreaker(state, 'single');
+    expect(new Set(state.staging.map((b) => b.id)).size).toBe(10);
+  });
+
+  it('caps staging, and says so by refusing rather than dropping', () => {
+    let state = emptyPanel();
+    for (let i = 0; i < MAX_STAGING; i++) state = stageNewBreaker(state, 'single');
+    expect(state.staging).toHaveLength(MAX_STAGING);
+
+    expect(stageNewBreaker(state, 'single')).toBe(state);
+
+    const withPlaced = placeBreaker(state, 'single', 1);
+    expect(stageBreaker(withPlaced, withPlaced.breakers[0].id)).toBe(withPlaced);
+  });
+
+  it('counts staged breakers separately from the panel totals', () => {
+    let state = placeBreaker(emptyPanel(), 'tandem', 1);
+    state = stageNewBreaker(state, 'double-4x120');
+
+    // The quad's four circuits are not on the panel, so they are not counted.
+    expect(summarize(state)).toMatchObject({
+      breakers: 1,
+      circuits: 2,
+      usedSlots: 1,
+      staged: 1,
+    });
+  });
+
+  it('leaves staged breakers out of the shared-slot marking', () => {
+    const state = stageNewBreaker(emptyPanel(), 'tandem');
+    expect(sharedSlots(state)).toEqual(new Set());
+  });
+});
+
+describe('rooms and labels reach into staging', () => {
+  function panelWithStagedRoom() {
+    let state = placeBreaker(emptyPanel(), 'single', 1);
+    state = stageBreaker(state, state.breakers[0].id);
+    const id = state.staging[0].id;
+    state = addRoom(state, 'Attic');
+    state = { ...state, staging: [{ ...state.staging[0], circuits: [{ room: 'Attic', label: 'Fan' }] }] };
+    return { state, id };
+  }
+
+  it('counts the room on a staged circuit in roomUsage', () => {
+    const { state } = panelWithStagedRoom();
+    expect(roomUsage(state, 'Attic')).toBe(1);
+  });
+
+  it('carries a staged circuit through a rename', () => {
+    const { state } = panelWithStagedRoom();
+    const renamed = renameRoom(state, 'Attic', 'Loft');
+    expect(renamed.staging[0].circuits[0].room).toBe('Loft');
+  });
+
+  it('clears a staged circuit when its room is removed', () => {
+    const { state } = panelWithStagedRoom();
+    const removed = removeRoom(state, 'Attic');
+    expect(removed.staging[0].circuits[0].room).toBe('');
+  });
+
+  it('suggests labels used only in staging', () => {
+    const { state } = panelWithStagedRoom();
+    expect(knownLabels(state)).toContain('Fan');
   });
 });

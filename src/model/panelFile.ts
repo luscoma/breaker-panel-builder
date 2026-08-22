@@ -10,8 +10,10 @@ import {
   BreakerConfig,
   CircuitLabel,
   MAX_ROOMS,
+  MAX_STAGING,
   PANEL_VERSION,
   PanelState,
+  StagedBreaker,
 } from './types';
 
 /**
@@ -54,36 +56,50 @@ export interface FileBreaker {
   circuits?: FileCircuit[];
 }
 
-/** Keyed by the breaker's topmost slot, so a two-slot breaker appears once. */
 export interface PanelFile {
   version: number;
   name: string;
   rooms: string[];
+  /** Keyed by the breaker's topmost slot, so a two-slot breaker appears once. */
   breakers: Record<string, FileBreaker>;
+  /**
+   * Breakers set aside in staging. A list rather than a map, because a staged
+   * breaker has no slot to key it by. Omitted when staging is empty.
+   */
+  staging?: FileBreaker[];
+}
+
+/** One breaker as the file records it: its name, and only the circuits it shows. */
+function toFileBreaker(breaker: StagedBreaker): FileBreaker {
+  // Only the circuits the arrangement currently exposes. A file listing four
+  // circuits for a one-circuit breaker would read as a different panel.
+  const circuits = visibleCircuits(breaker).map((c): FileCircuit => {
+    const entry: FileCircuit = {};
+    if (c.room) entry.room = c.room;
+    if (c.label) entry.label = c.label;
+    return entry;
+  });
+  const entry: FileBreaker = { breaker: FILE_NAME_BY_CONFIG[breaker.config] };
+  // Blank circuits carry no information and would triple the file's length.
+  if (circuits.some((c) => c.room || c.label)) entry.circuits = circuits;
+  return entry;
 }
 
 export function toPanelFile(state: PanelState): PanelFile {
   const breakers: Record<string, FileBreaker> = {};
   for (const breaker of [...state.breakers].sort((a, b) => a.slot - b.slot)) {
-    // Only the circuits the arrangement currently exposes. A file listing four
-    // circuits for a one-circuit breaker would read as a different panel.
-    const circuits = visibleCircuits(breaker).map((c): FileCircuit => {
-      const entry: FileCircuit = {};
-      if (c.room) entry.room = c.room;
-      if (c.label) entry.label = c.label;
-      return entry;
-    });
-    const entry: FileBreaker = { breaker: FILE_NAME_BY_CONFIG[breaker.config] };
-    // Blank circuits carry no information and would triple the file's length.
-    if (circuits.some((c) => c.room || c.label)) entry.circuits = circuits;
-    breakers[String(breaker.slot)] = entry;
+    breakers[String(breaker.slot)] = toFileBreaker(breaker);
   }
-  return {
+  const file: PanelFile = {
     version: PANEL_VERSION,
     name: state.name,
     rooms: [...state.rooms],
     breakers,
   };
+  // Left out entirely when nothing is staged, so the common file keeps the
+  // shape it has always had.
+  if (state.staging.length > 0) file.staging = state.staging.map(toFileBreaker);
+  return file;
 }
 
 /**
@@ -106,42 +122,64 @@ export function serializePanelFile(state: PanelState): string {
       .map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`)
       .join(', ')} }`;
 
+  /**
+   * One breaker, on one line when it fits. `head` carries whatever precedes the
+   * body — a slot key inside `breakers`, nothing inside the `staging` list.
+   */
+  const entryLines = (head: string, entry: FileBreaker, comma: string): string[] => {
+    const open = `${head}{ "breaker": ${JSON.stringify(entry.breaker)}`;
+    if (!entry.circuits) return [`${open} }${comma}`];
+
+    const inline = `${open}, "circuits": [${entry.circuits.map(circuitText).join(', ')}] }${comma}`;
+    if (inline.length <= WRAP_AT) return [inline];
+
+    const circuits = entry.circuits;
+    return [
+      `${open},`,
+      '      "circuits": [',
+      ...circuits.map((c, j) => `        ${circuitText(c)}${j === circuits.length - 1 ? '' : ','}`),
+      '      ]',
+      `    }${comma}`,
+    ];
+  };
+
+  const slots = Object.keys(file.breakers);
+  const staging = file.staging ?? [];
+  // Whether anything follows the breakers block decides its trailing comma.
+  const afterBreakers = staging.length > 0 ? ',' : '';
+
   const lines = [
     '{',
     `  "version": ${file.version},`,
     `  "name": ${JSON.stringify(file.name)},`,
     `  "rooms": [${file.rooms.map((r) => JSON.stringify(r)).join(', ')}],`,
-    '  "breakers": {',
   ];
 
-  const slots = Object.keys(file.breakers);
   if (slots.length === 0) {
-    lines[lines.length - 1] = '  "breakers": {}';
-    return `${lines.join('\n')}\n}\n`;
-  }
-  slots.forEach((slot, i) => {
-    const entry = file.breakers[slot];
-    const comma = i === slots.length - 1 ? '' : ',';
-    const head = `    ${JSON.stringify(slot)}: { "breaker": ${JSON.stringify(entry.breaker)}`;
-    if (!entry.circuits) {
-      lines.push(`${head} }${comma}`);
-      return;
-    }
-    const inline = `${head}, "circuits": [${entry.circuits.map(circuitText).join(', ')}] }${comma}`;
-    if (inline.length <= WRAP_AT) {
-      lines.push(inline);
-      return;
-    }
-    lines.push(`${head},`);
-    lines.push('      "circuits": [');
-    entry.circuits.forEach((c, j) => {
-      lines.push(`        ${circuitText(c)}${j === entry.circuits!.length - 1 ? '' : ','}`);
+    lines.push(`  "breakers": {}${afterBreakers}`);
+  } else {
+    lines.push('  "breakers": {');
+    slots.forEach((slot, i) => {
+      lines.push(
+        ...entryLines(
+          `    ${JSON.stringify(slot)}: `,
+          file.breakers[slot],
+          i === slots.length - 1 ? '' : ',',
+        ),
+      );
     });
-    lines.push('      ]');
-    lines.push(`    }${comma}`);
-  });
+    lines.push(`  }${afterBreakers}`);
+  }
 
-  lines.push('  }', '}');
+  if (staging.length > 0) {
+    lines.push('  "staging": [');
+    staging.forEach((entry, i) => {
+      lines.push(...entryLines('    ', entry, i === staging.length - 1 ? '' : ','));
+    });
+    lines.push('  ]');
+  }
+
+  lines.push('}');
   return `${lines.join('\n')}\n`;
 }
 
@@ -226,6 +264,28 @@ export function fromPanelFile(raw: unknown): ImportResult {
       ...state,
       breakers: [...state.breakers, { id: newId(), config, slot, circuits }],
     };
+  }
+
+  // Staging is optional, and a plain list — a staged breaker has no slot, so
+  // nothing here can collide or fall off the panel. Only the name can be wrong.
+  if (Array.isArray(file.staging)) {
+    const entries = file.staging;
+    dropped += Math.max(0, entries.length - MAX_STAGING);
+    for (const value of entries.slice(0, MAX_STAGING)) {
+      if (typeof value !== 'object' || value === null) {
+        dropped += 1;
+        continue;
+      }
+      const name = (value as Partial<FileBreaker>).breaker;
+      const config = typeof name === 'string' ? CONFIG_BY_FILE_NAME.get(name.trim()) : undefined;
+      if (!config) {
+        dropped += 1;
+        continue;
+      }
+      const circuits = readCircuits((value as Partial<FileBreaker>).circuits, config);
+      for (const circuit of circuits) state = addRoom(state, circuit.room);
+      state = { ...state, staging: [...state.staging, { id: newId(), config, circuits }] };
+    }
   }
 
   return { ok: true, state, dropped };

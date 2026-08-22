@@ -1,13 +1,15 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
-import { canPlace, circuitCount, emptyPanel, newId } from './panel';
+import { allBreakers, canPlace, circuitCount, emptyPanel, newId } from './panel';
 import {
   BreakerConfig,
   CircuitLabel,
   MAX_CIRCUITS,
   MAX_ROOMS,
+  MAX_STAGING,
   PANEL_VERSION,
   PanelState,
   SLOT_COUNT,
+  StagedBreaker,
 } from './types';
 
 /**
@@ -44,10 +46,14 @@ const CONFIG_BY_CODE = new Map<string, BreakerConfig>(
 /** [roomIndex, label]; roomIndex is -1 when the circuit has no room. */
 type WireCircuit = [number, string];
 
-interface WireBreaker {
+/** A breaker in staging: an arrangement and its labels, but no slot. */
+interface WireStaged {
   c: string;
-  s: number;
   x: WireCircuit[];
+}
+
+interface WireBreaker extends WireStaged {
+  s: number;
 }
 
 interface WireState {
@@ -55,14 +61,20 @@ interface WireState {
   n: string;
   r: string[];
   b: WireBreaker[];
+  /**
+   * Staging, omitted when empty so a panel with nothing set aside encodes to
+   * exactly the same link it always did.
+   */
+  sg?: WireStaged[];
 }
 
 export function encodeState(state: PanelState): string {
   // Any room a circuit refers to gets written out, even if it somehow never
   // made it into the room list — otherwise sharing would silently drop it.
+  // Staged circuits count: their rooms have to survive the trip too.
   const rooms = [...state.rooms];
   const roomIndex = new Map(rooms.map((room, i) => [room, i]));
-  for (const breaker of state.breakers) {
+  for (const breaker of allBreakers(state)) {
     for (const circuit of breaker.circuits) {
       if (circuit.room && !roomIndex.has(circuit.room)) {
         roomIndex.set(circuit.room, rooms.push(circuit.room) - 1);
@@ -70,16 +82,20 @@ export function encodeState(state: PanelState): string {
     }
   }
 
+  const circuits = (b: StagedBreaker): WireCircuit[] =>
+    b.circuits.map((c): WireCircuit => [roomIndex.get(c.room) ?? -1, c.label]);
+
   const wire: WireState = {
     v: PANEL_VERSION,
     n: state.name,
     r: rooms.slice(0, MAX_ROOMS),
-    b: state.breakers.map((b) => ({
-      c: CODE_BY_CONFIG[b.config],
-      s: b.slot,
-      x: b.circuits.map((c): WireCircuit => [roomIndex.get(c.room) ?? -1, c.label]),
-    })),
+    b: state.breakers.map((b) => ({ c: CODE_BY_CONFIG[b.config], s: b.slot, x: circuits(b) })),
   };
+  if (state.staging.length > 0) {
+    wire.sg = state.staging
+      .slice(0, MAX_STAGING)
+      .map((b) => ({ c: CODE_BY_CONFIG[b.config], x: circuits(b) }));
+  }
   return compressToEncodedURIComponent(JSON.stringify(wire));
 }
 
@@ -115,6 +131,17 @@ export function decodeState(encoded: string): PanelState | null {
     rooms: [...new Set(slots.filter(Boolean))],
   };
 
+  const readCircuits = (x: unknown, config: BreakerConfig): CircuitLabel[] => {
+    const entries = Array.isArray(x) ? x : [];
+    const length = Math.max(circuitCount(config), Math.min(entries.length, MAX_CIRCUITS));
+    return Array.from({ length }, (_, i): CircuitLabel => {
+      const entry = entries[i];
+      const index = Array.isArray(entry) && typeof entry[0] === 'number' ? entry[0] : -1;
+      const label = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
+      return { room: slots[index] ?? '', label: label.slice(0, MAX_LABEL_LENGTH) };
+    });
+  };
+
   for (const raw of w.b.slice(0, MAX_WIRE_BREAKERS)) {
     // The panel physically cannot hold more than one breaker per slot.
     if (state.breakers.length >= SLOT_COUNT) break;
@@ -124,19 +151,24 @@ export function decodeState(encoded: string): PanelState | null {
     if (!config || typeof s !== 'number') continue;
     if (!canPlace(state, config, s)) continue;
 
-    const entries = Array.isArray(x) ? x : [];
-    const length = Math.max(circuitCount(config), Math.min(entries.length, MAX_CIRCUITS));
-    const circuits = Array.from({ length }, (_, i): CircuitLabel => {
-      const entry = entries[i];
-      const index = Array.isArray(entry) && typeof entry[0] === 'number' ? entry[0] : -1;
-      const raw = Array.isArray(entry) && typeof entry[1] === 'string' ? entry[1] : '';
-      return { room: slots[index] ?? '', label: raw.slice(0, MAX_LABEL_LENGTH) };
-    });
-
     state = {
       ...state,
-      breakers: [...state.breakers, { id: newId(), config, slot: s, circuits }],
+      breakers: [...state.breakers, { id: newId(), config, slot: s, circuits: readCircuits(x, config) }],
     };
+  }
+
+  // Staging is optional: a link written before it existed, or by a panel with
+  // nothing set aside, simply has no `sg` and lands with staging empty.
+  if (Array.isArray(w.sg)) {
+    const staging: StagedBreaker[] = [];
+    for (const raw of w.sg.slice(0, MAX_STAGING)) {
+      if (typeof raw !== 'object' || raw === null) continue;
+      const { c, x } = raw as Partial<WireStaged>;
+      const config = typeof c === 'string' ? CONFIG_BY_CODE.get(c) : undefined;
+      if (!config) continue;
+      staging.push({ id: newId(), config, circuits: readCircuits(x, config) });
+    }
+    state = { ...state, staging };
   }
   return state;
 }

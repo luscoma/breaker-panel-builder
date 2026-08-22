@@ -8,14 +8,25 @@ import {
   MAX_ROOMS,
   PANEL_VERSION,
   PanelState,
+  MAX_STAGING,
   ROOM_COLORS_DARK,
   ROOM_COLORS_LIGHT,
   SLOT_COUNT,
+  StagedBreaker,
   ThrowDef,
 } from './types';
 
 export function emptyPanel(): PanelState {
-  return { v: PANEL_VERSION, name: 'Main Panel', rooms: [], breakers: [] };
+  return { v: PANEL_VERSION, name: 'Main Panel', rooms: [], breakers: [], staging: [] };
+}
+
+/**
+ * Every breaker the panel knows about, placed or staged. Anything that reads
+ * circuits — room usage, label suggestions, renames — has to look at both, or a
+ * breaker's labels quietly stop counting the moment it is set aside.
+ */
+export function allBreakers(state: PanelState): StagedBreaker[] {
+  return [...state.breakers, ...state.staging];
 }
 
 export function slotsFor(config: BreakerConfig): 1 | 2 {
@@ -125,7 +136,7 @@ export function padCircuits(circuits: CircuitLabel[], count: number): CircuitLab
 }
 
 /** The circuits a breaker's current arrangement actually exposes. */
-export function visibleCircuits(breaker: Breaker): CircuitLabel[] {
+export function visibleCircuits(breaker: StagedBreaker): CircuitLabel[] {
   return breaker.circuits.slice(0, circuitCount(breaker.config));
 }
 
@@ -143,6 +154,57 @@ export function moveBreaker(state: PanelState, id: string, slot: number): PanelS
 
 export function removeBreaker(state: PanelState, id: string): PanelState {
   return { ...state, breakers: state.breakers.filter((b) => b.id !== id) };
+}
+
+/**
+ * Lift a placed breaker off the panel into staging, keeping its id, arrangement
+ * and every label. Staging is a holding area for rearranging, not a bin: the
+ * breaker comes back exactly as it left, hidden circuits included.
+ */
+export function stageBreaker(state: PanelState, id: string): PanelState {
+  const breaker = state.breakers.find((b) => b.id === id);
+  if (!breaker || state.staging.length >= MAX_STAGING) return state;
+  const staged: StagedBreaker = {
+    id: breaker.id,
+    config: breaker.config,
+    circuits: breaker.circuits,
+  };
+  return {
+    ...state,
+    breakers: state.breakers.filter((b) => b.id !== id),
+    staging: [...state.staging, staged],
+  };
+}
+
+/**
+ * Drop a staged breaker back onto the panel. Staging occupies no slots, so the
+ * usual placement rules apply unchanged — this can only fail on a bad fit.
+ */
+export function placeFromStaging(state: PanelState, id: string, slot: number): PanelState {
+  const staged = state.staging.find((b) => b.id === id);
+  if (!staged || !canPlace(state, staged.config, slot)) return state;
+  return {
+    ...state,
+    breakers: [...state.breakers, { ...staged, slot }],
+    staging: state.staging.filter((b) => b.id !== id),
+  };
+}
+
+/**
+ * Add a fresh breaker straight to staging, skipping the panel. Lets a layout be
+ * gathered before anything is committed to a slot.
+ */
+export function stageNewBreaker(state: PanelState, config: BreakerConfig): PanelState {
+  if (state.staging.length >= MAX_STAGING) return state;
+  return {
+    ...state,
+    staging: [...state.staging, { id: newId(), config, circuits: emptyCircuits(config) }],
+  };
+}
+
+/** Discard a staged breaker outright. The panel itself is untouched. */
+export function removeFromStaging(state: PanelState, id: string): PanelState {
+  return { ...state, staging: state.staging.filter((b) => b.id !== id) };
 }
 
 /**
@@ -227,30 +289,39 @@ export function addRoom(state: PanelState, room: string): PanelState {
   return { ...state, rooms: [...state.rooms, name] };
 }
 
+/** Rewrite every circuit's room, on the panel and in staging alike. */
+function mapRooms<T extends StagedBreaker>(breakers: T[], fn: (room: string) => string): T[] {
+  return breakers.map((b) => ({
+    ...b,
+    circuits: b.circuits.map((c) => {
+      const room = fn(c.room);
+      return room === c.room ? c : { ...c, room };
+    }),
+  }));
+}
+
 /** Rename a room, carrying every circuit that used it along. */
 export function renameRoom(state: PanelState, from: string, to: string): PanelState {
   const name = to.trim();
   if (!name || from === name || !state.rooms.includes(from)) return state;
   if (state.rooms.includes(name)) return state;
+  const rewrite = (room: string) => (room === from ? name : room);
   return {
     ...state,
     rooms: state.rooms.map((r) => (r === from ? name : r)),
-    breakers: state.breakers.map((b) => ({
-      ...b,
-      circuits: b.circuits.map((c) => (c.room === from ? { ...c, room: name } : c)),
-    })),
+    breakers: mapRooms(state.breakers, rewrite),
+    staging: mapRooms(state.staging, rewrite),
   };
 }
 
 /** Remove a room and clear it from any circuit using it. */
 export function removeRoom(state: PanelState, room: string): PanelState {
+  const rewrite = (r: string) => (r === room ? '' : r);
   return {
     ...state,
     rooms: state.rooms.filter((r) => r !== room),
-    breakers: state.breakers.map((b) => ({
-      ...b,
-      circuits: b.circuits.map((c) => (c.room === room ? { ...c, room: '' } : c)),
-    })),
+    breakers: mapRooms(state.breakers, rewrite),
+    staging: mapRooms(state.staging, rewrite),
   };
 }
 
@@ -258,9 +329,13 @@ export function setName(state: PanelState, name: string): PanelState {
   return { ...state, name };
 }
 
+/**
+ * Circuits using a room, staging included: removing a room clears it from
+ * staged circuits too, so a count that ignored them would understate the damage.
+ */
 export function roomUsage(state: PanelState, room: string): number {
   let count = 0;
-  for (const b of state.breakers) {
+  for (const b of allBreakers(state)) {
     for (const c of visibleCircuits(b)) if (c.room === room) count += 1;
   }
   return count;
@@ -276,7 +351,7 @@ export function roomColor(state: PanelState, room: string, light = false): strin
 /** Suggested labels: the built-in list plus anything already used in this panel. */
 export function knownLabels(state: PanelState): string[] {
   const used = new Set<string>();
-  for (const b of state.breakers) {
+  for (const b of allBreakers(state)) {
     for (const c of visibleCircuits(b)) {
       const label = c.label.trim();
       if (label) used.add(label);
@@ -304,8 +379,15 @@ export interface PanelSummary {
   circuits: number;
   monitoredCircuits: number;
   usedSlots: number;
+  /** Breakers currently in staging. Not counted in any of the totals above. */
+  staged: number;
 }
 
+/**
+ * Totals for the panel as built. Staged breakers are reported separately and
+ * never folded in: they occupy no slots and carry no circuits until they land,
+ * so counting them would overstate what the panel actually does.
+ */
 export function summarize(state: PanelState): PanelSummary {
   let circuits = 0;
   let monitored = 0;
@@ -316,5 +398,11 @@ export function summarize(state: PanelState): PanelSummary {
     if (isIndividuallyMonitored(b.config)) monitored += n;
     usedSlots += slotsFor(b.config);
   }
-  return { breakers: state.breakers.length, circuits, monitoredCircuits: monitored, usedSlots };
+  return {
+    breakers: state.breakers.length,
+    circuits,
+    monitoredCircuits: monitored,
+    usedSlots,
+    staged: state.staging.length,
+  };
 }

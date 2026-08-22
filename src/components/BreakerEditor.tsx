@@ -11,6 +11,7 @@ interface BreakerEditorProps {
   onRoomChange: (circuit: number, room: string) => void;
   onRoomCommit: (circuit: number, room: string) => void;
   onLabelChange: (circuit: number, label: string) => void;
+  onStage: () => void;
   onRemove: () => void;
   onClose: () => void;
 }
@@ -25,6 +26,7 @@ export function BreakerEditor({
   onRoomChange,
   onRoomCommit,
   onLabelChange,
+  onStage,
   onRemove,
   onClose,
 }: BreakerEditorProps) {
@@ -162,6 +164,11 @@ export function BreakerEditor({
       <div className="sheet__footer">
         <button type="button" className="btn btn--danger" onClick={onRemove}>
           Remove breaker
+        </button>
+        {/* Keeps the breaker and every label, unlike Remove — it just comes off
+            the panel so the slots below it can be reshuffled. */}
+        <button type="button" className="btn" onClick={onStage}>
+          Move to staging
         </button>
         <button type="button" className="btn" onClick={onClose}>
           Done

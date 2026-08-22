@@ -7,6 +7,7 @@ import {
   setCircuitLabel,
   setConfig,
   setName,
+  stageNewBreaker,
   visibleCircuits,
 } from './panel';
 import {
@@ -16,7 +17,7 @@ import {
   serializePanelFile,
   toPanelFile,
 } from './panelFile';
-import { ALL_CONFIGS, PANEL_VERSION } from './types';
+import { ALL_CONFIGS, MAX_STAGING, PANEL_VERSION } from './types';
 
 /** Mirrors the serializer's wrap threshold. */
 const WRAP_AT_LIMIT = 140;
@@ -377,5 +378,143 @@ describe('importing a file', () => {
     if (!result.ok) return;
     expect(result.state.breakers.length).toBeLessThanOrEqual(48);
     expect(result.state.breakers[0].circuits[0].label.length).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('staging in the panel file', () => {
+  function withStaging() {
+    let state = sample();
+    state = stageNewBreaker(state, 'double-4x120');
+    state = stageNewBreaker(state, 'single');
+    state = {
+      ...state,
+      staging: [
+        { ...state.staging[0], circuits: [
+          { room: 'Garage', label: 'EV charger' },
+          { room: '', label: '' },
+          { room: '', label: '' },
+          { room: '', label: '' },
+        ] },
+        state.staging[1],
+      ],
+    };
+    return state;
+  }
+
+  it('writes staging as a list, since a staged breaker has no slot', () => {
+    const file = toPanelFile(withStaging());
+    expect(file.staging).toEqual([
+      {
+        breaker: 'quad',
+        circuits: [
+          { room: 'Garage', label: 'EV charger' },
+          {},
+          {},
+          {},
+        ],
+      },
+      { breaker: 'single' },
+    ]);
+  });
+
+  it('omits staging entirely when nothing is set aside', () => {
+    expect(toPanelFile(sample())).not.toHaveProperty('staging');
+    expect(serializePanelFile(sample())).not.toContain('staging');
+  });
+
+  it('stays valid JSON with staging present', () => {
+    const text = serializePanelFile(withStaging());
+    expect(() => JSON.parse(text)).not.toThrow();
+    expect(JSON.parse(text)).toEqual(JSON.parse(JSON.stringify(toPanelFile(withStaging()))));
+  });
+
+  it('stays valid JSON with staging but no placed breakers', () => {
+    // The breakers block collapses to {} here, and still needs its comma.
+    const state = stageNewBreaker(emptyPanel(), 'tandem');
+    const text = serializePanelFile(state);
+    expect(() => JSON.parse(text)).not.toThrow();
+    expect(JSON.parse(text).breakers).toEqual({});
+    expect(JSON.parse(text).staging).toEqual([{ breaker: 'tandem' }]);
+  });
+
+  it('round-trips a panel with staging', () => {
+    const state = withStaging();
+    const result = parsePanelFile(serializePanelFile(state));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.dropped).toBe(0);
+    expect(result.state.staging.map((b) => b.config)).toEqual(['double-4x120', 'single']);
+    expect(result.state.staging[0].circuits[0]).toEqual({ room: 'Garage', label: 'EV charger' });
+  });
+
+  it('imports a file with no staging key as empty staging', () => {
+    const result = fromPanelFile({ version: PANEL_VERSION, breakers: { '1': { breaker: 'single' } } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.staging).toEqual([]);
+  });
+
+  it('picks up a room named only by a staged circuit', () => {
+    const result = fromPanelFile({
+      version: PANEL_VERSION,
+      breakers: {},
+      staging: [{ breaker: 'single', circuits: [{ room: 'Attic', label: 'Fan' }] }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.rooms).toEqual(['Attic']);
+  });
+
+  it('skips and counts unusable staging entries rather than dropping them silently', () => {
+    const result = fromPanelFile({
+      version: PANEL_VERSION,
+      breakers: {},
+      staging: [{ breaker: 'nonsense' }, null, 'quad', { breaker: 'quad' }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.staging).toHaveLength(1);
+    expect(result.dropped).toBe(3);
+  });
+
+  it('refuses a prototype-chain breaker name in staging', () => {
+    for (const breaker of ['constructor', '__proto__', 'toString']) {
+      const result = fromPanelFile({ version: PANEL_VERSION, breakers: {}, staging: [{ breaker }] });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.staging).toEqual([]);
+    }
+  });
+
+  it('ignores a staging value that is not an array', () => {
+    const result = fromPanelFile({ version: PANEL_VERSION, breakers: {}, staging: 'quad' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.staging).toEqual([]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it('caps staging on import and counts the overflow', () => {
+    const result = fromPanelFile({
+      version: PANEL_VERSION,
+      breakers: {},
+      staging: Array.from({ length: MAX_STAGING + 5 }, () => ({ breaker: 'single' })),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.staging).toHaveLength(MAX_STAGING);
+    expect(result.dropped).toBe(5);
+  });
+
+  it('gives every imported breaker a distinct id across panel and staging', () => {
+    const result = fromPanelFile({
+      version: PANEL_VERSION,
+      breakers: { '1': { breaker: 'single' }, '2': { breaker: 'single' } },
+      staging: [{ breaker: 'single' }, { breaker: 'single' }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const ids = [...result.state.breakers, ...result.state.staging].map((b) => b.id);
+    expect(new Set(ids).size).toBe(4);
   });
 });
