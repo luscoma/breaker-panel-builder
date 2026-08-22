@@ -126,7 +126,8 @@ same object a `breakers` value is, minus any notion of position:
 - Order is preserved; it is the order the app shows them in.
 - Staged breakers occupy **no slots**, so they never collide with anything and never make a
   `breakers` entry invalid. The only thing that can be wrong with one is its `breaker` name.
-- They are not counted in the panel's circuit, monitoring or slot totals — they are not installed.
+- They are not counted in the panel's circuit, monitoring or slot totals — they are not installed,
+  and they do not appear in the app's PNG/SVG export, which pictures the panel as built.
 - Omit the key entirely when nothing is staged. `"staging": []` means the same thing.
 
 Generating a file with no `staging` key is always valid; it simply lands with staging empty.

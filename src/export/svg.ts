@@ -8,9 +8,8 @@ import {
   slotsFor,
   summarize,
   throwsFor,
-  visibleCircuits,
 } from '../model/panel';
-import { Breaker, CONFIGS, PanelState, ROWS, StagedBreaker } from '../model/types';
+import { Breaker, PanelState, ROWS, StagedBreaker } from '../model/types';
 
 const ROW_H = 34;
 const LABEL_W = 250;
@@ -26,26 +25,11 @@ const RIGHT_BODY_X = SPINE_X + SPINE_W;
 const WIDTH = PAD * 2 + LABEL_W * 2 + BODY_W * 2 + SPINE_W;
 const GRID_TOP = HEADER_H;
 const GRID_H = ROWS * ROW_H;
-const BODY_HEIGHT = GRID_TOP + GRID_H + FOOTER_H;
-
-/** The "In staging" list under the footer: a heading, then one line each. */
-const STAGING_HEAD_H = 26;
-const STAGING_LINE_H = 15;
-
-function stagingHeight(state: PanelState): number {
-  if (state.staging.length === 0) return 0;
-  // The trailing pad leaves room for the last line's descenders.
-  return STAGING_HEAD_H + state.staging.length * STAGING_LINE_H + 14;
-}
-
 /**
- * The rendered size for a given panel. A function rather than a constant
- * because staging adds a line per breaker set aside — a fixed height would
- * either clip the list or leave a band of white under every other panel.
+ * The export is a picture of the panel as built. Staging is a workspace, not
+ * part of the panel, so it is deliberately left out and the height stays fixed.
  */
-export function panelSvgSize(state: PanelState): { width: number; height: number } {
-  return { width: WIDTH, height: BODY_HEIGHT + stagingHeight(state) };
-}
+const HEIGHT = GRID_TOP + GRID_H + FOOTER_H;
 
 const COLORS = {
   bg: '#ffffff',
@@ -230,24 +214,11 @@ function renderBreaker(state: PanelState, breaker: Breaker): string {
 }
 
 /**
- * A staged breaker's circuits on one line. Staging has no slots, so there is no
- * face to draw — the labels are all there is to say about it.
- */
-function stagedCircuitText(breaker: StagedBreaker): string {
-  const entries = visibleCircuits(breaker)
-    .map((c) => [c.room.trim(), c.label.trim()].filter(Boolean).join(' · '))
-    .filter(Boolean);
-  if (entries.length === 0) return 'unlabeled';
-  return entries.join(', ');
-}
-
-/**
  * Render the panel as a standalone SVG document. Pure and DOM-free so the
  * same output feeds the SVG download and the PNG canvas rasterization.
  */
 export function renderPanelSvg(state: PanelState): string {
   const parts: string[] = [];
-  const { height: HEIGHT } = panelSvgSize(state);
 
   parts.push(
     `<defs>` +
@@ -321,39 +292,6 @@ export function renderPanelSvg(state: PanelState): string {
       `shares a monitoring channel (its slot number is marked too)</text>`,
   );
 
-  // Breakers that exist but are not in the panel. Listed under the directory so
-  // a printed card records the whole plan, not just the part already installed.
-  if (state.staging.length > 0) {
-    let y = BODY_HEIGHT + 12;
-    parts.push(
-      `<line x1="${PAD}" y1="${y - 10}" x2="${WIDTH - PAD}" y2="${y - 10}" ` +
-        `stroke="${COLORS.rule}" stroke-width="0.75"/>`,
-    );
-    parts.push(
-      `<text x="${PAD}" y="${y + 4}" font-size="11.5" font-weight="700" fill="${COLORS.ink}">` +
-        `In staging (${state.staging.length}) — not placed in the panel</text>`,
-    );
-    y += STAGING_HEAD_H - 12;
-
-    for (const breaker of state.staging) {
-      y += STAGING_LINE_H;
-      const monitored = isIndividuallyMonitored(breaker.config);
-      parts.push(
-        `<circle cx="${PAD + 4}" cy="${y - 3.5}" r="2.6" fill="${monitored ? COLORS.ink : 'none'}" ` +
-          `stroke="${COLORS.ink}" stroke-width="1"/>`,
-      );
-      const name = CONFIGS[breaker.config].short;
-      const nameW = textWidth(`${name}  `, LABEL_FS * 1.06);
-      parts.push(
-        `<text x="${PAD + 13}" y="${y}" font-size="${LABEL_FS}">` +
-          `<tspan font-weight="600" fill="${COLORS.ink}">${esc(name)}</tspan>` +
-          `<tspan fill="${COLORS.muted}">  ${esc(
-            truncate(stagedCircuitText(breaker), WIDTH - PAD * 2 - 13 - nameW),
-          )}</tspan></text>`,
-      );
-    }
-  }
-
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" ` +
     `viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">\n` +
@@ -361,3 +299,5 @@ export function renderPanelSvg(state: PanelState): string {
     `\n</svg>`
   );
 }
+
+export const SVG_SIZE = { width: WIDTH, height: HEIGHT };

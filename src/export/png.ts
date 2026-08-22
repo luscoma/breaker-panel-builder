@@ -1,6 +1,6 @@
 import { PanelState } from '../model/types';
 import { downloadBlob, fileStem } from './download';
-import { panelSvgSize, renderPanelSvg } from './svg';
+import { renderPanelSvg, SVG_SIZE } from './svg';
 
 const SCALE = 2;
 
@@ -16,12 +16,9 @@ export function downloadSvg(state: PanelState): void {
 
 export async function renderPanelPngBlob(state: PanelState): Promise<Blob> {
   const svg = renderPanelSvg(state);
-  // Staging makes the panel taller, so the size comes from the state that was
-  // just rendered rather than from a constant.
-  const size = panelSvgSize(state);
   const image = new Image();
-  image.width = size.width;
-  image.height = size.height;
+  image.width = SVG_SIZE.width;
+  image.height = SVG_SIZE.height;
 
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
@@ -30,8 +27,8 @@ export async function renderPanelPngBlob(state: PanelState): Promise<Blob> {
   });
 
   const canvas = document.createElement('canvas');
-  canvas.width = size.width * SCALE;
-  canvas.height = size.height * SCALE;
+  canvas.width = SVG_SIZE.width * SCALE;
+  canvas.height = SVG_SIZE.height * SCALE;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas is unavailable in this browser');
   ctx.fillStyle = '#ffffff';

@@ -70,7 +70,10 @@ breakers that are out of the panel but still part of the plan.
 
 Staged breakers occupy no slots and are counted separately: they add nothing to the circuit,
 monitoring or slot totals, because they are not installed. They travel with the panel through the
-share link, the JSON file and the exported image.
+share link and the JSON file, so a link or a file hands over the work in progress intact.
+
+They are **not** in the PNG or SVG export. That image is the panel as built — a directory card to
+print and put in the door — and a list of breakers that are not in the panel has no place on it.
 
 Because the bar owns the bottom edge, the panel does not auto-scroll during a drag — a drag that
 reached for the bar would otherwise scroll the panel out from under it. Staging is the way to move a
@@ -111,7 +114,8 @@ you edit, so the address bar is always shareable.
 Everything else lives under **File**:
 
 - **Copy PNG** — copied to the clipboard where the browser allows it, downloaded otherwise.
-- **Download SVG** — a vector of the same directory-card rendering.
+- **Download SVG** — a vector of the same directory-card rendering. Both picture the panel as built,
+  so neither includes staging.
 - **Export JSON** — the panel as a readable, hand-editable file (below).
 - **Import JSON** — read one back, replacing the current panel.
 
