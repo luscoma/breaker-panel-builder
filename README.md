@@ -75,9 +75,11 @@ share link and the JSON file, so a link or a file hands over the work in progres
 They are **not** in the PNG or SVG export. That image is the panel as built — a directory card to
 print and put in the door — and a list of breakers that are not in the panel has no place on it.
 
-Because the bar owns the bottom edge, the panel does not auto-scroll during a drag — a drag that
-reached for the bar would otherwise scroll the panel out from under it. Staging is the way to move a
-breaker a long way down the panel: park it, scroll, place it.
+Auto-scroll and the bar both want the bottom of the screen, so they are split by target rather than
+by distance: holding a drag near the bottom scrolls the panel, **unless the pointer is over
+staging**, where scrolling would only run the slots out from under a drop that isn't aimed at them.
+Lifting a staged breaker therefore never scrolls, and holding a drag in the strip just above the bar
+still walks the panel down to slot 47.
 
 ## Rooms and labels
 

@@ -2,6 +2,7 @@ import {
   CollisionDetection,
   DndContext,
   DragEndEvent,
+  DragMoveEvent,
   DragOverlay,
   DragStartEvent,
   MouseSensor,
@@ -168,6 +169,9 @@ export default function App() {
   const [armedStagedId, setArmedStagedId] = useState<string | null>(null);
   const [roomsOpen, setRoomsOpen] = useState(false);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
+  // Whether the pointer is over staging. A ref, not state: nothing renders from
+  // it, and auto-scroll has to see the change without waiting for a render.
+  const overStagingRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
   const lastHashRef = useRef<string>('');
 
@@ -176,6 +180,27 @@ export default function App() {
   const stagingRef = useRef<HTMLDivElement | null>(null);
   const collisionDetection = useMemo(
     () => detectCollisions(() => stagingRef.current?.getBoundingClientRect() ?? null),
+    [],
+  );
+
+  /**
+   * Auto-scroll and the staging bar both want the bottom of the viewport, so
+   * they are split by target rather than by distance: scrolling runs everywhere
+   * except over staging. Without that, lifting a staged breaker — pointer
+   * already deep in the scroll band — ran the panel out from under the drag.
+   *
+   * The band is widened past dnd-kit's 20% default so a comfortable strip of it
+   * still sits above the 92px bar: at 780px tall that is ~140px to hold the
+   * pointer in when the goal really is to reach a lower slot.
+   *
+   * The check goes through canScroll rather than `enabled` because dnd-kit
+   * re-runs the auto-scroll effect on every pointer move and calls canScroll
+   * there — so a ref-backed answer takes effect a whole render earlier than a
+   * state-backed one, which is the difference between crossing into the bar
+   * cleanly and the panel lurching a row first.
+   */
+  const autoScroll = useMemo(
+    () => ({ threshold: { x: 0, y: 0.3 }, canScroll: () => !overStagingRef.current }),
     [],
   );
 
@@ -277,18 +302,31 @@ export default function App() {
     if (data?.kind === 'palette' || data?.kind === 'breaker' || data?.kind === 'staged') {
       setActiveDrag(data);
     }
+    // Lifting a staged breaker starts with the pointer already inside the bar,
+    // and no move event has fired yet — seed it, or the panel bolts downward
+    // the instant the drag begins.
+    overStagingRef.current = data?.kind === 'staged';
     setSelectedId(null);
     setArmedStagedId(null);
   };
 
+  const onDragMove = (event: DragMoveEvent) => {
+    overStagingRef.current = event.over?.id === STAGING_DROPPABLE_ID;
+  };
+
+  const endDrag = () => {
+    setActiveDrag(null);
+    overStagingRef.current = false;
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
     const drag = event.active.data.current as ActiveDrag | undefined;
-    const overStaging = event.over?.id === STAGING_DROPPABLE_ID;
+    const droppedOnStaging = event.over?.id === STAGING_DROPPABLE_ID;
     const slot = event.over?.data.current?.slot as number | undefined;
-    setActiveDrag(null);
+    endDrag();
     if (!drag) return;
 
-    if (overStaging) {
+    if (droppedOnStaging) {
       // Dropping a staged breaker back on the bar it came from is a no-op, not
       // a duplicate.
       if (drag.kind === 'staged') return;
@@ -452,15 +490,11 @@ export default function App() {
     <DndContext
       sensors={sensors}
       collisionDetection={collisionDetection}
-      // dnd-kit auto-scrolls whenever the pointer is near the viewport edge,
-      // and the staging bar is pinned to the bottom edge — so picking a staged
-      // breaker up, or dragging a placed one down to the bar, scrolls the panel
-      // out from under the drag. Staging is itself the way to move a breaker
-      // across a long panel: park it, scroll, place it.
-      autoScroll={false}
+      autoScroll={autoScroll}
       onDragStart={onDragStart}
+      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
-      onDragCancel={() => setActiveDrag(null)}
+      onDragCancel={endDrag}
     >
       <div className="app">
         <header className="topbar">
